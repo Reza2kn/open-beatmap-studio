@@ -70,6 +70,26 @@ class BeatModelTests(unittest.TestCase):
         self.assertGreaterEqual(ranges[0]["start"], 2)
         self.assertEqual(module.stem_events(np.zeros(sample_rate), sample_rate, np), ([], []))
 
+    def test_quiet_high_hats_are_detected_beside_louder_kicks(self):
+        sr=22050
+        audio=np.zeros(sr*7,dtype=np.float32)
+        hats=[]
+        rng=np.random.default_rng(42)
+        for beat in np.arange(1,6,.5):
+            t=np.arange(3000)/sr
+            start=round(beat*sr)
+            audio[start:start+len(t)]+=.8*np.sin(2*np.pi*80*t)*np.exp(-t*25)
+            time=beat+.25
+            hats.append(time)
+            t=np.arange(800)/sr
+            noise=rng.normal(size=len(t))
+            noise=np.r_[0.,np.diff(noise)]
+            start=round(time*sr)
+            audio[start:start+len(t)]+=.025*noise*np.exp(-t*130)
+        events,_=module.stem_events(audio,sr,np)
+        found=[time for time in hats if any(event.get('detail') and abs(event['time']-time)<.02 for event in events)]
+        self.assertGreaterEqual(len(found),len(hats)*.9)
+
 
 if __name__ == "__main__":
     unittest.main()

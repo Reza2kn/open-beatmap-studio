@@ -193,6 +193,68 @@ def timing_summary(times, confidence, downbeats, np):
                         "irregularIntervalFraction": round(irregular, 4), "gridResidualMedianSeconds": round(float(np.median(residual)), 6)}}
 
 
+def stem_details(signal, sample_rate, core_events, np):
+    """Band-balanced detail attacks: quiet hats must not compete with kick energy.
+
+    Each candidate still needs a physical rise in an isolated drum frequency
+    band. No timestamps are filled from the musical grid.
+    """
+    from scipy.signal import butter, sosfiltfilt, stft, find_peaks
+    from scipy.ndimage import uniform_filter1d
+    if len(signal) < 2048:
+        return []
+    n, hop = 1024, 128
+    _, times, spectrogram = stft(signal, fs=sample_rate, nperseg=n, noverlap=n-hop, boundary="zeros")
+    magnitude = np.abs(spectrogram)
+    frequencies = np.fft.rfftfreq(n, 1/sample_rate)
+    global_rms = float(np.sqrt(np.mean(signal.astype(np.float64)**2)))
+    details = []
+    step = max(1, round(sample_rate*.002))
+    width = max(2, round(sample_rate*.005))
+    delay = max(1, round(.012*sample_rate/step))
+    for low, high, kind in [(350, 2000, "snare"), (2000, min(10000, sample_rate*.47), "hat")]:
+        if high <= low:
+            continue
+        filtered = sosfiltfilt(butter(3, [low, high], btype="bandpass", fs=sample_rate, output="sos"), signal)
+        if np.sqrt(np.mean(filtered**2)) < max(1e-7, global_rms*.015):
+            continue
+        band = magnitude[(frequencies>=low)&(frequencies<high)]
+        flux = np.maximum(0, np.diff(np.log1p(band*100), axis=1, prepend=np.zeros((len(band),1)))).mean(axis=0)
+        scale = float(np.quantile(flux, .985))
+        if scale < 1e-9:
+            continue
+        local = uniform_filter1d(flux, size=max(3,round(.24*sample_rate/hop)), mode="nearest")
+        peaks, _ = find_peaks(flux, height=np.maximum(scale*.16,local*1.35), prominence=scale*.1,
+                              distance=max(1,round(.06*sample_rate/hop)))
+        prefix = np.r_[0.,np.cumsum(filtered**2)]
+        centers = np.arange(0,len(signal),step)
+        energy = (prefix[np.minimum(len(signal),centers+(width+1)//2)]-prefix[np.maximum(0,centers-width//2)])/width
+        rise = np.maximum(0,energy-np.r_[np.zeros(delay),energy[:-delay]])
+        for peak in peaks:
+            first=max(0,round((times[peak]-.035)*sample_rate/step))
+            last=min(len(rise),round((times[peak]+.04)*sample_rate/step)+1)
+            if last<=first:
+                continue
+            maximum=first+int(np.argmax(rise[first:last]))
+            if rise[maximum]<1e-12:
+                continue
+            edge=maximum
+            while edge>first and rise[edge-1]>rise[maximum]*.18:
+                edge-=1
+            timestamp=edge*step/sample_rate
+            if any(abs(event["time"]-timestamp)<.055 for event in core_events):
+                continue
+            strength=min(1.,float(flux[peak]/scale))
+            details.append({"time":round(timestamp,6),"strength":round(strength,6),"confidence":round(.55+.3*math.sqrt(strength),6),
+                            "kind":kind,"detail":True,"low":0.,"mid":float(kind=="snare"),"high":float(kind=="hat"),
+                            "percussiveRatio":1,"source":"demucs-htdemucs-band"})
+    output=[]
+    for event in sorted(details,key=lambda event:(-event["strength"],event["time"])):
+        if not any(abs(other["time"]-event["time"])<.055 for other in output):
+            output.append(event)
+    return output
+
+
 def stem_events(signal, sample_rate, np):
     """Physical attacks in an already isolated drum estimate, not a beat grid."""
     from scipy.signal import find_peaks
@@ -248,7 +310,8 @@ def stem_events(signal, sample_rate, np):
             ranges[-1]["end"] = end
         else:
             ranges.append({"start": index, "end": end})
-    return events, ranges
+    events.extend(stem_details(signal, sample_rate, events, np))
+    return sorted(events,key=lambda event:event["time"]), ranges
 
 
 def separate_drums(signal, sample_rate, args):
@@ -280,15 +343,23 @@ def separate_drums(signal, sample_rate, args):
         sources = apply_model(separator, waveform[None], device="cpu", shifts=0, split=True, overlap=.1, progress=False, num_workers=0)[0]
         drum_tensor = sources[separator.sources.index("drums")] * deviation + average
         drums = drum_tensor.mean(0).cpu().numpy()
-    del sources, drum_tensor, waveform, separator, package
+        instrument_tensor = sources[separator.sources.index("other")] * deviation + average
+        instruments = instrument_tensor.mean(0).cpu().numpy()
+    del sources, drum_tensor, instrument_tensor, waveform, separator, package
     drums = soxr.resample(drums, separator_rate, sample_rate) if separator_rate != sample_rate else drums
     drums = np.asarray(drums[:len(signal)], dtype=np.float32)
     events, active_ranges = stem_events(drums, sample_rate, np)
+    instruments = soxr.resample(instruments, separator_rate, sample_rate) if separator_rate != sample_rate else instruments
+    instrument_events, _ = stem_events(np.asarray(instruments[:len(signal)],dtype=np.float32), sample_rate, np)
+    for event in instrument_events:
+        event["kind"]="melodic"
+        event["source"]="demucs-htdemucs-other"
     return {"percussionSource": "demucs-htdemucs", "percussionMethod": "learned-drum-stem", "percussionEvents": events,
+            "melodicEvents":instrument_events, "melodicSource":"demucs-htdemucs-other",
             "drumQuality": {"model": "htdemucs", "checkpointSha256": DRUM_CHECKPOINT_SHA256,
                             "device": "cpu", "inputSampleRate": sample_rate, "inputMono": True,
                             "separatorSampleRate": separator_rate, "eventCount": len(events), "activeRanges": active_ranges,
-                            "onsetMethod": "waveform-energy-rise", "confidenceIsHeuristic": True,
+                            "onsetMethod": "waveform-energy-rise+band-balanced-flux", "confidenceIsHeuristic": True,
                             "elapsedSeconds": round(time.perf_counter() - start, 3)}}
 
 

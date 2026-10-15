@@ -79,6 +79,23 @@ test(
       assert.ok(map.notes.length > 20);
     }
 
+    await t.test("stored isolated instruments give harder profiles distinct, denser supported hit times", {
+      skip: !fixture.layeredModelResultPath ? "No local layered model fixture configured." : false,
+    },()=>{
+      const result=JSON.parse(readFileSync(fixture.layeredModelResultPath,"utf8"));
+      const layered=applyBeatModel(analysis,result), maps=generateMaps(layered);
+      const counts=Object.fromEntries(Object.entries(maps).map(([d,map])=>[d,new Set(map.notes.map(n=>n.beat)).size]));
+      for(const [d,minimum]of Object.entries(fixture.minimumLayeredClicks??{})) assert.ok(counts[d]>=minimum,`${d}: ${counts[d]} < ${minimum}`);
+      assert.ok(counts.Expert>counts.Hard);
+      assert.ok(counts.ExpertPlus>=counts.Expert*1.35);
+      assert.ok(counts.Hard>=counts.Normal*2);
+      const sourceTimes=[...result.percussionEvents,...result.melodicEvents].map(e=>e.time).sort((a,b)=>a-b);
+      for(const map of Object.values(maps)) {
+        assert.equal(map.validation.valid,true);
+        for(const n of map.notes)assert.ok(nearestDistance(sourceTimes,n.sourceTime)<.00001);
+      }
+    });
+
     await t.test("stored learned inference retains the independent pulse fallback backbone", {
       skip: !fixture.referencePath || !fixture.modelResultPath
         ? "Configure referencePath and modelResultPath; no learned inference runs in CI."

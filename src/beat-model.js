@@ -11,6 +11,10 @@ export function applyBeatModel(analysis, result) {
     downbeatTimes: (result.downbeatTimes || []).filter(t => Number.isFinite(t) && t >= 0 && t < analysis.duration),
     beatSource: "learned", beatModel: result.model, modelQuality: result.quality,
     modelWarnings: result.warnings || [],
+    ...(Array.isArray(result.melodicEvents) ? {
+      melodicEvents:result.melodicEvents.filter(e=>Number.isFinite(e.time)&&e.time>=0&&e.time<analysis.duration),
+      melodicSource:result.melodicSource,
+    } : {}),
     ...(Array.isArray(result.percussionEvents) ? {
       percussionEvents: result.percussionEvents.filter(e=>Number.isFinite(e.time)&&e.time>=0&&e.time<analysis.duration),
       percussionSource: result.percussionSource || "learned-drums",

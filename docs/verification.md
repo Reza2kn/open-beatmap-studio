@@ -70,3 +70,11 @@ The production mono-PCM neural path completed the full recording with 476 isolat
 Final browser QA also exposed a development-only encoder dependency optimization reload that discarded the uploaded track on first export. The codec is now explicitly prebundled for development; final export acceptance uses the built production frontend, where dependency optimization/HMR is absent.
 
 Production-browser end-to-end acceptance passed on the supplied MP3: local neural separation/tracking, piano-intro and drum-entry playback/seeking, native rhythm lighting, worker encoding and ZIP download. The downloaded export contains 123/245/495/532/580 notes across five difficulties, and 4,536 color plus 1,168 rotation groups per difficulty. Reopened ZIP validation reports zero errors/warnings; FFprobe confirms real stereo 48 kHz Vorbis and 195.860-second duration. The user's audio and generated maps remain local. This establishes the implemented signal/export path; subjective musicality and in-headset acceptance remain unverified.
+
+## Preview clicks and denser difficult maps (v0.3.1)
+
+Note clicks now default on and follow the currently selected difficulty; the timing control also shows the number of distinct hit times. Simultaneous saber notes produce one click. Click-off and beat-grid review remain available.
+
+The learned path now analyzes the separator's instrument stem as well as its drums. Band-balanced transient detection adds quieter percussion detail, and the arranger layers recurring instrumental attacks into drum passages. Expert+ also admits supported finer/quiet instrument fills. Strong drum anchors take priority; higher profiles retain the accepted rhythm of the previous harder profile while adding playable detail. No uniform-grid filler is added.
+
+On the exact local “512” file, the full CPU model plus default 65% density produced 119 / 236 / 570 / 660 / 949 distinct hit times across the five difficulties (119 / 236 / 582 / 690 / 1,004 note objects). The previous neural revision had about 493 distinct Expert+ hit times. These counts establish increased rhythmic coverage, not ranked difficulty or human gameplay quality. Every proposed timestamp still refers to a detected instrument/percussion attack; hand intervals and collision checks remain active. Private source audio, stems and model outputs are excluded from publication.

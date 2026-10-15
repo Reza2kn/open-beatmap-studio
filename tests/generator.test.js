@@ -96,7 +96,7 @@ function pulseFixture({ varying = false } = {}) {
 function grooveFixture() {
   const analysis = pulseFixture();
   analysis.percussionEvents = [];
-  analysis.melodicEvents = analysis.modelBeatTimes.map(time => ({ time, strength: .7, confidence: .95, kind: 'melodic' }));
+  analysis.melodicEvents = analysis.modelBeatTimes.slice(0,16).map(time => ({ time, strength: .7, confidence: .95, kind: 'melodic' }));
   // Hand-authored truth: piano for four bars, followed by the eight-attack
   // kick/snare groove. Quarter beats 1 and 3 are actual kicks in this fixture.
   const phases = [0, .75, 1, 1.5, 2, 2.75, 3, 3.5];
@@ -193,7 +193,7 @@ test('trusted isolated drum stems retain quiet real snares and canonicalize hats
   assert.equal(maps.Hard.rhythmDiagnostics.percussionSource,'isolated-drums');
   assert.ok(maps.Hard.notes.some(note=>note.musicalRole==='snare'&&note.sourceTime>10));
   assert.ok(maps.Expert.notes.some(note=>note.musicalRole==='high'));
-  assert.equal(maps.Hard.notes.filter(note=>note.musicalRole==='high').length,0);
+  assert.ok(maps.Hard.notes.some(note=>note.musicalRole==='high'));
   for(const note of maps.Expert.notes)assert.ok(Math.abs(note.sourceTime-(note.beat*.6+.2))<.0001);
 });
 
@@ -522,4 +522,38 @@ test("static validator catches overlaps, rapid repeats, parity, unsafe walls and
     validateGameplay({ notes: [], bombs: [], obstacles: [] }).errors,
     [],
   );
+});
+
+
+test('harder levels cover more real percussion and layered melody without adding filler hits',()=>{
+  const a=grooveFixture();a.percussionSource='demucs-htdemucs';
+  for(let bar=4;bar<16;bar++) {
+    for(let tick=0;tick<32;tick++) {
+      if(tick%8===0 || [.5,1.25,2.5,3.25].includes(tick/8))continue;
+      a.percussionEvents.push({time:.2+(bar*4+tick/8)*.6,kind:'hat',detail:true,strength:.7,confidence:.9,source:'demucs-htdemucs-band'});
+    }
+    for(const phase of [.5,1.25,2.5,3.25])a.melodicEvents.push({time:.2+(bar*4+phase)*.6,kind:'melodic',strength:.6,confidence:.9});
+  }
+  const maps=generateMaps(a,{walls:false,bombs:false});
+  const count=d=>new Set(maps[d].notes.map(n=>n.beat)).size;
+  assert.ok(count('Hard')>count('Normal')*1.5);
+  assert.ok(count('Expert')>=count('Hard'), 'Expert retains Hard when the supported 16th-note grid is already full');
+  assert.ok(count('ExpertPlus')>count('Expert')*1.15);
+  assert.ok(maps.Expert.notes.some(n=>n.timingRole==='melodic-layer'));
+  assert.ok(maps.ExpertPlus.notes.some(n=>Math.abs(((n.sourceTime-.2)/.6)*4-Math.round(((n.sourceTime-.2)/.6)*4))>.1),'Expert+ includes supported 32nd percussion');
+  const sources=[...a.percussionEvents,...a.melodicEvents].map(e=>e.time);
+  for(const map of Object.values(maps)) {
+    assert.equal(map.validation.valid,true,JSON.stringify(map.validation.errors));
+    for(const note of map.notes)assert.ok(sources.some(t=>Math.abs(t-note.sourceTime)<.00001));
+  }
+});
+
+test('Expert+ can use quiet isolated instrument fills while rejecting unaligned attacks',()=>{
+  const a=grooveFixture();a.percussionSource='demucs-htdemucs';
+  const real=.2+(9*4+1.25)*.6, unaligned=.2+(9*4+1.07)*.6;
+  for(const time of [real,unaligned])a.melodicEvents.push({time,kind:'melodic',strength:.05,confidence:.8,source:'demucs-htdemucs-other'});
+  const maps=generateMaps(a,{walls:false,bombs:false});
+  assert.ok(maps.ExpertPlus.notes.some(n=>Math.abs(n.sourceTime-real)<.00001));
+  assert.ok(!maps.ExpertPlus.notes.some(n=>Math.abs(n.sourceTime-unaligned)<.00001));
+  for(const d of ['Easy','Normal','Hard','Expert'])assert.ok(!maps[d].notes.some(n=>Math.abs(n.sourceTime-real)<.00001));
 });
