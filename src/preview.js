@@ -32,6 +32,14 @@ function arrowTexture() {
   g.fill();
   return new THREE.CanvasTexture(c);
 }
+export function crossedAttack(previous, now, attack) {
+  return (
+    Number.isFinite(previous) &&
+    previous < attack &&
+    now >= attack &&
+    now - attack < 0.12
+  );
+}
 export class Stage {
   constructor(
     container,
@@ -138,6 +146,21 @@ export class Stage {
       this.scene.add(beam);
       this.beams.push(beam);
     }
+    this.cutFrameMaterial = new THREE.LineBasicMaterial({
+      color: 0xb5c5ce,
+      transparent: true,
+      opacity: 0.18,
+    });
+    this.cutFrame = new THREE.LineLoop(
+      new THREE.BufferGeometry().setFromPoints([
+        new THREE.Vector3(-2, 0.15, 1),
+        new THREE.Vector3(2, 0.15, 1),
+        new THREE.Vector3(2, 3.2, 1),
+        new THREE.Vector3(-2, 3.2, 1),
+      ]),
+      this.cutFrameMaterial,
+    );
+    this.scene.add(this.cutFrame);
     this.noteGeometry = new THREE.BoxGeometry(0.72, 0.72, 0.72);
     this.arrowGeometry = new THREE.PlaneGeometry(0.55, 0.55);
     this.texture = arrowTexture();
@@ -604,11 +627,18 @@ export class Stage {
       !this.pointer.length
     )
       return;
+    const previous = this.lastRenderedTime;
     this.lastRenderedTime = now;
     this.renderDirty = false;
     this.time = now;
     const playing = this.isPlaying?.();
     this.renderLightshow(now);
+    let nearestHit = 1;
+    for (const o of this.objects)
+      if (o.kind === "note")
+        nearestHit = Math.min(nearestHit, Math.abs(o.time - now));
+    this.cutFrameMaterial.opacity = 0.14 + 0.35 * Math.exp(-nearestHit * 30);
+    this.cutFrame.visible = !this.lightshowOnly;
     if (this.map) {
       const beat = ((now - this.offset) * this.bpm) / 60;
       let flash = 0.12;
@@ -633,8 +663,25 @@ export class Stage {
         const dt = o.time - now;
         const end =
           o.kind === "wall" ? (-o.data.duration * 60) / this.bpm - 0.5 : -0.25;
+        if (
+          o.kind === "note" &&
+          !this.practice &&
+          playing &&
+          !this.hit.has(o) &&
+          crossedAttack(previous, now, o.time)
+        ) {
+          this.hit.add(o);
+          this.burst(
+            new THREE.Vector3(o.mesh.position.x, o.mesh.position.y, 1),
+            o.data.color ? BLUE : RED,
+          );
+        }
+        const visibleTail = o.kind === "note" && !this.practice ? 0 : end;
         o.mesh.visible =
-          dt < 5.5 && dt > end && !this.hit.has(o) && !this.lightshowOnly;
+          dt < 5.5 &&
+          dt > visibleTail &&
+          !this.hit.has(o) &&
+          !this.lightshowOnly;
         o.mesh.position.z = 1 - dt * 10 - (o.depth || 0) / 2;
         if (
           this.practice &&

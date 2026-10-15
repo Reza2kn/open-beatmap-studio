@@ -25,9 +25,9 @@ npm run preview
 
 - Browser audio decoding and trimming, FFT spectral-flux onsets, approximate constant BPM/phase, spectral-band balance, RMS energy and sixteen-beat phrase sections.
 - Editable BPM/grid offset, half/double tempo controls, deterministic seeds, density, four choreography styles, optional walls/bombs/lighting.
-- Easy, Normal, Hard, Expert and Expert+ Standard maps, with separate density/movement rules, hand alternation, parity and hazard-clearance safeguards. Difficulty names are generated profiles, not ranked-map certification.
+- Easy, Normal, Hard, Expert and Expert+ Standard maps that select observed acoustic attacks, preserve syncopation, repeat movement vocabulary for recurring rhythms, and simplify by difficulty, with hand alternation, parity and hazard-clearance safeguards. Difficulty names are generated profiles, not ranked-map certification.
 - **Advanced native Weave lighting:** individual fixture color waves, complementary color halves, brightness gradients, index filters, eased X/Y beam rotations, distributed fans, bass/percussion accents, phrase builds and energy-jump blooms, dim rests and final blackout. No Chroma dependency. Brightness and motion controls; a dedicated lightshow view.
-- Three.js browser stage, waveform seeking, playback speed/volume, mouse practice with directional red/blue cuts, score, combo, bombs and wall penalties. Left click for red and right click for blue; hold and drag in the arrow direction. Space toggles playback outside form fields.
+- Three.js browser stage with a visible cut frame and automatic cuts on mapped attacks, beat-click/note-click timing review, waveform hit annotations, speaker-clock synchronization, seeking, playback speed/volume, mouse practice with directional red/blue cuts, score, combo, bombs and wall penalties. Left click for red and right click for blue; hold and drag in the arrow direction. Space toggles playback outside form fields.
 - Worker-based real Vorbis encoding and ZIP export with `Info.dat`, five `.dat` difficulty files, `song.ogg` and square PNG cover art. Optional uploaded cover, title/artist/mapper metadata.
 
 Audio analysis, mapping, preview, encoding and ZIP creation run on your device. No API keys, hosted inference or paid services. Assets and encoder are bundled and self-hosted. Loading the app still requires a web server; this version does not install an offline service worker.
@@ -61,6 +61,14 @@ The stock games do not directly import arbitrary map ZIPs. No Noodle Extensions 
 Automated tests exercise known-tempo PCM and phase recovery, silence, energy structure, 560 tempo/seed/style/difficulty combinations, note/hazard collision and parity checks, native lighting group/filter/axis/timing validation, real Ogg CRC/header checks, ZIP round-tripping, and a complete PCM-to-export integration. Browser QA additionally checks playback, controls, trimming and worker-encoded ZIP downloads. See [verification notes](docs/verification.md) for dated outcomes and remaining checks.
 
 Tempo estimation is heuristic and may choose half/double time. Listen and adjust timing before exporting. Sections are energy-based phrase windows, not a learned verse/chorus detector. Variable-tempo beat grids, automatic timing drift correction, exact drum/stem separation, custom enemies, editor-style per-note authoring, ranked-quality guarantees, and VR controller simulation are not implemented. Bombs are the game's standard hazard; arbitrary enemies are not part of this Standard export format.
+
+## Test your own recording
+
+```sh
+BEATMAP_TEST_AUDIO="/absolute/path/to/song.mp3" npm test
+```
+
+The optional real-audio test uses local FFmpeg, checks that every generated hit preserves an observed attack, and exercises all five difficulty safeguards. It does not upload or bundle the song. A local `.local-tests/audio-fixture.json` can additionally pin the recording hash and an independently estimated beat reference; that directory is ignored by Git. The supplied “512” recording is configured this way in the development checkout. See the [real-song repair evidence](docs/verification.md#rhythm-repair-after-real-user-feedback-2026-10-15) for the original failure, measured correction and limits.
 
 ## Research and architecture
 

@@ -7,7 +7,7 @@ import "@fontsource/dm-sans/500.css";
 import "@fontsource/dm-sans/600.css";
 import "@phosphor-icons/web/regular";
 import "./style.css";
-import { analyzeAudio } from "./audio.js";
+import { analyzeAudio, retimeAnalysis } from "./audio.js";
 import { generateMaps, validateGameplay } from "./generator.js";
 import { buildMapFiles, validateMapFiles, createMapZip } from "./export.js";
 import {
@@ -36,12 +36,12 @@ document.querySelector("#app").innerHTML = `
 </section>
 <section class="generation-section"><div class="section-heading"><h2>Make it yours</h2><span class="subtle">All 5 difficulties</span></div><label class="field-label" for="style">Choreography</label><div class="select-wrap"><select id="style"><option value="flow">Flow · smooth & musical</option><option value="dance">Dance · wide & rhythmic</option><option value="technical">Technical · more variation</option><option value="cinematic">Cinematic · dramatic phrases</option></select></div><div class="slider-label"><label for="density">Note density</label><output id="density-output">65%</output></div><input id="density" type="range" min="0.15" max="1" step="0.05" value="0.65"><div class="range-ends"><span>Room to breathe</span><span>Keep me moving</span></div>
 <div class="toggle-row"><span>${icon("wall")} Walls</span><label class="switch"><input type="checkbox" id="walls" checked><span></span><span class="sr-only">Generate walls</span></label></div><div class="toggle-row"><span>${icon("bomb")} Bombs</span><label class="switch"><input type="checkbox" id="bombs" checked><span></span><span class="sr-only">Generate bombs</span></label></div><div class="toggle-row"><span>${icon("lightbulb")} Rhythm lighting</span><label class="switch"><input type="checkbox" id="lights" checked><span></span><span class="sr-only">Generate lighting events</span></label></div>
-<details class="light-controls" open><summary>Lightshow director <span>NATIVE</span></summary><p class="light-caption">Spatial color waves · rotating beam fans · beat accents</p><div class="slider-label"><label for="light-intensity">Brightness</label><output id="light-intensity-output">70%</output></div><input id="light-intensity" type="range" min="0.1" max="1" step="0.05" value="0.7"><div class="slider-label"><label for="light-motion">Beam motion</label><output id="light-motion-output">65%</output></div><input id="light-motion" type="range" min="0" max="1" step="0.05" value="0.65"><p class="help">Bass pulses. Percussion accents. Phrase builds. No rapid strobe mode.</p></details><details class="advanced"><summary>Timing & advanced ${icon("sliders-horizontal")}</summary><div class="two-fields"><label for="bpm">Tempo (BPM)<input id="bpm" type="number" min="40" max="300" step="0.1" value="128"></label><label for="offset">Grid offset (s)<input id="offset" type="number" min="-5" max="5" step="0.01" value="0"></label></div><label for="seed">Pattern seed<input id="seed" type="number" value="42" min="0" max="4294967295"></label><button id="half-bpm" class="text-button">½ tempo</button><button id="double-bpm" class="text-button">2× tempo</button><p class="help" id="confidence">Tempo estimates need a listening check.</p></details>
+<details class="light-controls" open><summary>Lightshow director <span>NATIVE</span></summary><p class="light-caption">Spatial color waves · rotating beam fans · beat accents</p><div class="slider-label"><label for="light-intensity">Brightness</label><output id="light-intensity-output">70%</output></div><input id="light-intensity" type="range" min="0.1" max="1" step="0.05" value="0.7"><div class="slider-label"><label for="light-motion">Beam motion</label><output id="light-motion-output">65%</output></div><input id="light-motion" type="range" min="0" max="1" step="0.05" value="0.65"><p class="help">Bass pulses. Percussion accents. Phrase builds. No rapid strobe mode.</p></details><details class="advanced"><summary>Timing & advanced ${icon("sliders-horizontal")}</summary><div class="two-fields"><label for="bpm">Tempo (BPM)<input id="bpm" type="number" min="40" max="300" step="0.001" value="128"></label><label for="offset">Grid offset (s)<input id="offset" type="number" min="-5" max="5" step="0.01" value="0"></label></div><label for="seed">Pattern seed<input id="seed" type="number" value="42" min="0" max="4294967295"></label><button id="half-bpm" class="text-button">½ tempo</button><button id="double-bpm" class="text-button">2× tempo</button><p class="help" id="confidence">Tempo estimates need a listening check.</p></details>
 <button class="primary full" id="generate" disabled>${icon("sparkle")} Generate beatmaps</button><p class="local-note">${icon("cpu")} Local analysis. No model download. No fees.</p></section></aside>
 <section class="editor" aria-label="Beatmap preview and timeline"><div class="preview-toolbar"><div class="difficulty-tabs" role="tablist" aria-label="Preview difficulty">${difficulties.map((d) => `<button role="tab" aria-selected="${d === "Hard"}" data-difficulty="${d}">${label(d)}</button>`).join("")}</div><button class="lightshow-view" id="lightshow-view" aria-pressed="false">${icon("lightbulb")} Lightshow view</button></div>
-<div class="stage-shell" id="stage-shell"><div id="stage"></div><div class="stage-top"><span class="stage-mode" id="stage-mode">${icon("eye")} Preview mode</span><span id="light-pattern" class="light-pattern">RHYTHM ENGINE</span><button class="stage-fullscreen" id="fullscreen" aria-label="Toggle fullscreen">${icon("arrows-out")}</button></div><div class="stage-watermark">LET THE<br><strong>RHYTHM LEAD.</strong></div><div class="practice-score" id="practice-score" hidden><strong id="score">0</strong><span id="combo">0 combo · 0 missed</span></div><div id="stage-feedback" aria-live="polite"></div><div class="stage-bottom"><span><b class="red-key"></b>Left saber <b class="blue-key"></b>Right saber</span><span id="stage-hint">Press play to explore your map</span></div><div id="loading" class="loading"><div class="loading-spinner"></div><strong id="loading-title">Finding the rhythm</strong><span id="loading-text">Listening for beats, energy and musical phrases…</span></div></div>
+<div class="stage-shell" id="stage-shell"><div id="stage"></div><div class="stage-top"><span class="stage-mode" id="stage-mode">${icon("eye")} Preview mode</span><span id="light-pattern" class="light-pattern">RHYTHM ENGINE</span><button class="stage-fullscreen" id="fullscreen" aria-label="Toggle fullscreen">${icon("arrows-out")}</button></div><div class="stage-watermark" hidden>LET THE<br><strong>RHYTHM LEAD.</strong></div><div class="practice-score" id="practice-score" hidden><strong id="score">0</strong><span id="combo">0 combo · 0 missed</span></div><div id="stage-feedback" aria-live="polite"></div><div class="stage-bottom"><span><b class="red-key"></b>Left saber <b class="blue-key"></b>Right saber</span><span id="stage-hint">Blocks meet the cut frame on the sound</span></div><div id="loading" class="loading"><div class="loading-spinner"></div><strong id="loading-title">Finding the rhythm</strong><span id="loading-text">Listening for beats, energy and musical phrases…</span></div></div>
 <div class="transport"><div class="transport-main"><button id="restart" class="icon-button" title="Restart" aria-label="Restart">${icon("skip-back")}</button><button class="play-button" id="play" aria-label="Play preview" disabled>${icon("play")}</button><span class="transport-time"><span id="time">0:00</span><span> / </span><span id="duration">1:00</span></span></div><div class="transport-options"><label class="speed" for="speed"><span class="sr-only">Playback speed</span><select id="speed"><option value="0.5">0.5×</option><option value="0.75">0.75×</option><option value="1" selected>1× speed</option><option value="1.25">1.25×</option></select></label><label class="volume" for="volume">${icon("speaker-high")}<input id="volume" type="range" min="0" max="1" step="0.05" value="0.6"><span class="sr-only">Volume</span></label><button class="practice-button" id="practice" aria-pressed="false">${icon("cursor")} Mouse practice</button></div></div>
-<div class="timeline"><div class="timeline-top"><span>${icon("waveform")} AUDIO & STRUCTURE</span><span id="analysis-summary">Analyzing your track</span></div><div class="waveform-shell"><canvas id="waveform" aria-label="Audio waveform and song sections"></canvas><input id="scrub" class="timeline-scrub" type="range" min="0" max="60" step="0.01" value="0" aria-label="Seek through song"><div id="playhead"></div></div><div class="timeline-ruler" id="ruler"></div><div class="sections" id="sections"></div></div>
+<div class="timing-review"><label for="timing-audio">Timing check</label><select id="timing-audio"><option value="off">Click off</option><option value="beats">Beat click</option><option value="notes">Note click</option></select><span>Blocks reach the cut frame on the mapped sound.</span></div><div class="timeline"><div class="timeline-top"><span>${icon("waveform")} AUDIO & STRUCTURE</span><span id="analysis-summary">Analyzing your track</span></div><div class="waveform-shell"><canvas id="waveform" aria-label="Audio waveform and song sections"></canvas><input id="scrub" class="timeline-scrub" type="range" min="0" max="60" step="0.01" value="0" aria-label="Seek through song"><div id="playhead"></div></div><div class="timeline-ruler" id="ruler"></div><div class="sections" id="sections"></div></div>
 <div class="map-stats"><div><span>${icon("music-note")} Notes</span><strong id="note-count">–</strong></div><div><span>${icon("activity")} Notes / sec</span><strong id="nps">–</strong></div><div><span>${icon("wall")} Walls</span><strong id="wall-count">–</strong></div><div><span>${icon("bomb")} Bombs</span><strong id="bomb-count">–</strong></div><div><span>${icon("lightning")} Light cues</span><strong id="light-count">–</strong></div><div class="validation-stat"><span id="validation-label">Checking patterns</span><strong id="validation">${icon("circle-notch")} In progress</strong></div></div>
 <div class="editor-footnote"><span>${icon("info")} Native Weave lightshow · PC & Quest custom-song loaders · no Chroma required.</span><button class="text-button" id="compat-open">Compatibility ${icon("arrow-up-right")}</button></div>
 </section></div><footer><span>Built for the music. Open for everyone.</span><button id="research-open">Under the hood ${icon("arrow-up-right")}</button><a href="https://github.com/Reza2kn/open-beatmap-studio" target="_blank" rel="noreferrer">Source on GitHub ${icon("arrow-up-right")}</a><span>Audio never leaves your browser<span class="desktop-only"> · YouTube uses your local bridge</span></span></footer></main>
@@ -198,17 +198,16 @@ async function generate({ reanalyze = false } = {}) {
       encoded = null;
       analysis = await analyzeAudio(buffer);
       if (isDemo && start === 0) {
-        analysis.bpm = 128;
-        analysis.offset = 0;
+        analysis = retimeAnalysis(analysis, 128, 0);
       }
-      $("#bpm").value = Number(analysis.bpm.toFixed(1));
+      $("#bpm").value = Number(analysis.bpm.toFixed(3));
       $("#offset").value = Number(analysis.offset.toFixed(3));
     } else {
-      analysis = {
-        ...analysis,
-        bpm: Number($("#bpm").value),
-        offset: Number($("#offset").value),
-      };
+      analysis = retimeAnalysis(
+        analysis,
+        Number($("#bpm").value),
+        Number($("#offset").value),
+      );
     }
     if (analysis.silent)
       throw new Error(
@@ -237,17 +236,17 @@ async function generate({ reanalyze = false } = {}) {
     selectDifficulty(selected);
     renderTimeline();
     $("#confidence").textContent =
-      `Tempo confidence: ${Math.round(analysis.confidence * 100)}%. ${isDemo ? "Demo grid is known at 128 BPM." : "Listen and adjust BPM or grid offset if needed. Constant-tempo grid."}`;
+      `Tempo confidence: ${Math.round(analysis.confidence * 100)}%. ${isDemo ? "Demo grid is known at 128 BPM." : "Listen and adjust BPM or grid offset if needed. Notes follow detected attacks; the click follows the estimated beat grid."}`;
     $("#track-detail").textContent =
       `${formatTime(original.duration)} · ${isDemo ? "Studio original" : `${Math.round(original.sampleRate / 1000)} kHz · local audio`}`;
     $("#analysis-summary").textContent =
-      `${Number(analysis.bpm.toFixed(1))} BPM · ${analysis.sections.length} sections`;
+      `${Number(analysis.bpm.toFixed(3))} BPM · ${analysis.sections.length} sections`;
     $("#duration").textContent = formatTime(buffer.duration);
     $("#scrub").max = buffer.duration;
     $("#generate").innerHTML = `${icon("sparkle")} Regenerate beatmaps`;
     $("#stage-hint").textContent = stage?.practice
       ? "Hold left / right click and slash in the arrow direction"
-      : "Press play to explore your map";
+      : "Blocks meet the cut frame on the sound";
   } catch (e) {
     dirty = true;
     toast(e.message, true);
@@ -275,6 +274,8 @@ function selectDifficulty(d) {
   ).toLocaleString();
   $("#light-count").title =
     `${lightshow?.lightRotationEventBoxGroups?.length || 0} rotation groups + color waves`;
+  updateTimingCheck();
+  renderTimeline();
   const v = validateGameplay(map);
   $("#validation").innerHTML = v.valid
     ? `${icon("check-circle")} Checks passed`
@@ -287,6 +288,18 @@ function selectDifficulty(d) {
       .join("\n") ||
     "Grid, collision and movement checks. Human playtesting still recommended.";
 }
+function updateTimingCheck() {
+  if (!analysis || !maps) return;
+  const mode = $("#timing-audio").value;
+  const times =
+    mode === "beats"
+      ? analysis.beatTimes
+      : maps[selected].notes.map(
+          (n) => analysis.offset + (n.beat * 60) / analysis.bpm,
+        );
+  transport.setClickTimes(times, mode);
+}
+$("#timing-audio").onchange = updateTimingCheck;
 function formatTime(t) {
   return `${Math.floor(Math.max(0, t) / 60)}:${String(Math.floor(Math.max(0, t) % 60)).padStart(2, "0")}`;
 }
@@ -303,6 +316,29 @@ function renderTimeline() {
     const h = Math.max(2, bars[i] * canvas.height * 0.8);
     g.fillStyle = i % 16 < 8 ? "#d07866" : "#976456";
     g.fillRect(i * w, (canvas.height - h) / 2, Math.max(1, w * 0.68), h);
+  }
+  if (maps && buffer) {
+    g.strokeStyle = "#bec8cf28";
+    g.lineWidth = 1;
+    for (const t of analysis.beatTimes) {
+      const x = (t / buffer.duration) * canvas.width;
+      g.beginPath();
+      g.moveTo(x, 0);
+      g.lineTo(x, canvas.height);
+      g.stroke();
+    }
+    for (const n of maps[selected].notes) {
+      const x =
+        ((analysis.offset + (n.beat * 60) / analysis.bpm) / buffer.duration) *
+        canvas.width;
+      g.fillStyle = n.color === 0 ? "#ff786a" : "#6fc7ef";
+      g.fillRect(
+        x,
+        canvas.height - 9 * devicePixelRatio,
+        devicePixelRatio,
+        7 * devicePixelRatio,
+      );
+    }
   }
   $("#ruler").innerHTML = Array.from(
     { length: 7 },
@@ -365,7 +401,7 @@ $("#practice").onclick = () => {
     (active ? " Mouse practice" : " Preview mode");
   $("#stage-hint").textContent = active
     ? "Hold left / right click and slash in the arrow direction"
-    : "Press play to explore your map";
+    : "Blocks meet the cut frame on the sound";
   if (active) {
     stage.lightshowOnly = false;
     $("#lightshow-view").setAttribute("aria-pressed", false);
@@ -638,7 +674,7 @@ $("#about-open").onclick = () =>
   );
 $("#research-open").onclick = () =>
   showDialog(
-    `<div class="dialog-eyebrow">UNDER THE HOOD</div><h2>Musical structure.<br>Intentional movement.</h2><p><strong>Listen:</strong> spectral changes, band energy and a tempo estimate identify rhythmic events and phrase energy. No neural model is required for this first version.</p><p><strong>Choreograph:</strong> seeded phrase patterns follow energy, alternate hands and cut directions, and scale density across five difficulties. Conservative walls and sparse bombs are checked against notes.</p><p><strong>Light:</strong> native event-box groups create spatial color waves, mirrored rotating beam fans, bass pulses and percussion accents, with phrase builds and deliberate rests. The browser provides an artistic approximation; actual game environments interpret these events differently.</p><p><strong>Export:</strong> a lightweight WebAssembly Vorbis encoder produces real Ogg audio in a worker. Timing offsets are baked into event timestamps.</p><p class="help">The research notes compare browser DSP, local learned beat trackers, and tiny decision models. Those learned models are research options; none are downloaded or used here.</p><div class="research-links"><a href="https://bsmg.wiki/mapping/map-format.html" target="_blank" rel="noreferrer">BSMG map format ↗</a><a href="https://bsmg.wiki/mapping/basic-mapping.html" target="_blank" rel="noreferrer">Mapping fundamentals ↗</a><a href="https://github.com/arseneyr/wasm-media-encoders" target="_blank" rel="noreferrer">Local Vorbis encoder ↗</a></div>`,
+    `<div class="dialog-eyebrow">UNDER THE HOOD</div><h2>Musical structure.<br>Intentional movement.</h2><p><strong>Listen:</strong> gain-normalized spectral changes and refined energy-rise edges identify acoustic attacks; full-phase tempo fitting estimates the pulse and phrase energy. No neural model is required for this first version.</p><p><strong>Choreograph:</strong> observed acoustic attacks provide the note rhythm. Recurring rhythmic families reuse movement vocabulary, alternate hands and cut directions, and simplify across five difficulties. Conservative walls and sparse bombs are checked against notes.</p><p><strong>Light:</strong> native event-box groups create spatial color waves, mirrored rotating beam fans, bass pulses and percussion accents, with phrase builds and deliberate rests. The browser provides an artistic approximation; actual game environments interpret these events differently.</p><p><strong>Export:</strong> a lightweight WebAssembly Vorbis encoder produces real Ogg audio in a worker. Observed note timing is preserved; grid offsets are baked once into exported event timestamps.</p><p class="help">The research notes compare browser DSP, local learned beat trackers, and tiny decision models. Those learned models are research options; none are downloaded or used here.</p><div class="research-links"><a href="https://bsmg.wiki/mapping/map-format.html" target="_blank" rel="noreferrer">BSMG map format ↗</a><a href="https://bsmg.wiki/mapping/basic-mapping.html" target="_blank" rel="noreferrer">Mapping fundamentals ↗</a><a href="https://github.com/arseneyr/wasm-media-encoders" target="_blank" rel="noreferrer">Local Vorbis encoder ↗</a></div>`,
   );
 async function loadDemo() {
   if (busy) return;

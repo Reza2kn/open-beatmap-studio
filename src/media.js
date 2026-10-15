@@ -182,6 +182,22 @@ export function createDemo(context) {
   }
   return b;
 }
+/** AudioContext's render clock leads the sound coming out of the speakers. */
+export function audibleContextTime(context, now = performance.now()) {
+  const stamp = context.getOutputTimestamp?.();
+  if (stamp && stamp.contextTime > 0 && stamp.performanceTime > 0) {
+    return Math.min(
+      context.currentTime,
+      Math.max(0, stamp.contextTime + (now - stamp.performanceTime) / 1000),
+    );
+  }
+  return Math.max(
+    0,
+    context.currentTime -
+      (context.outputLatency || 0) -
+      (context.baseLatency || 0),
+  );
+}
 export class Transport {
   constructor(context, onChange = () => {}) {
     this.context = context;
@@ -189,6 +205,8 @@ export class Transport {
     this.position = 0;
     this.rate = 1;
     this.playing = false;
+    this.clickTimes = [];
+    this.clickNodes = new Set();
     this.gain = context.createGain();
     this.gain.connect(context.destination);
     this.gain.gain.value = 0.6;
@@ -203,7 +221,11 @@ export class Transport {
     return this.playing
       ? Math.min(
           this.buffer.duration,
-          this.position + (this.context.currentTime - this.started) * this.rate,
+          Math.max(
+            0,
+            this.position +
+              (audibleContextTime(this.context) - this.started) * this.rate,
+          ),
         )
       : this.position;
   }
@@ -218,16 +240,19 @@ export class Transport {
     this.started = this.context.currentTime;
     this.playing = true;
     this.source.onended = () => {
-      if (this.playing && this.time >= this.buffer.duration - 0.05) {
+      if (this.playing) {
+        this.stopClicks();
         this.position = this.buffer.duration;
         this.playing = false;
         this.onChange();
       }
     };
     this.source.start(0, this.position);
+    this.startClicks();
     this.onChange();
   }
   pause() {
+    this.stopClicks();
     if (this.playing) {
       this.position = this.time;
       this.playing = false;
@@ -243,6 +268,61 @@ export class Transport {
     this.position = Math.max(0, Math.min(this.buffer?.duration || 0, t));
     if (playing) this.play();
     else this.onChange();
+  }
+  setClickTimes(times, mode = "off") {
+    this.stopClicks();
+    this.clickTimes =
+      mode === "off" ? [] : [...new Set(times)].sort((a, b) => a - b);
+    this.clickMode = mode;
+    if (this.playing) this.startClicks();
+  }
+  stopClicks() {
+    clearInterval(this.clickTimer);
+    for (const node of this.clickNodes) {
+      try {
+        node.stop();
+      } catch {}
+    }
+    this.clickNodes.clear();
+  }
+  startClicks() {
+    if (!this.clickTimes.length) return;
+    let cursor = this.clickTimes.findIndex((t) => t >= this.position - 0.001);
+    if (cursor < 0) return;
+    const schedule = () => {
+      if (!this.playing) return;
+      const clock = this.context.currentTime;
+      const songTime = this.position + (clock - this.started) * this.rate;
+      while (
+        cursor < this.clickTimes.length &&
+        this.clickTimes[cursor] <= songTime + 0.22 * this.rate
+      ) {
+        const time = this.clickTimes[cursor++];
+        if (time < songTime - 0.03) continue;
+        const when = Math.max(
+          clock,
+          this.started + (time - this.position) / this.rate,
+        );
+        const osc = this.context.createOscillator(),
+          gain = this.context.createGain();
+        osc.frequency.value = this.clickMode === "beats" ? 1300 : 850;
+        gain.gain.setValueAtTime(0.0001, when);
+        gain.gain.exponentialRampToValueAtTime(0.13, when + 0.001);
+        gain.gain.exponentialRampToValueAtTime(0.0001, when + 0.035);
+        osc.connect(gain);
+        gain.connect(this.gain);
+        this.clickNodes.add(osc);
+        osc.onended = () => {
+          this.clickNodes.delete(osc);
+          osc.disconnect();
+          gain.disconnect();
+        };
+        osc.start(when);
+        osc.stop(when + 0.04);
+      }
+    };
+    schedule();
+    this.clickTimer = setInterval(schedule, 40);
   }
   setRate(rate) {
     const playing = this.playing;

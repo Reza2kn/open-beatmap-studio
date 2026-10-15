@@ -1749,3 +1749,32 @@ code {
 .source-link {
   color: var(--accent);
 }
+.timing-review {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 12px;
+  color: #9aa5af;
+}
+.timing-review label {
+  font-size: 10px;
+  white-space: nowrap;
+}
+.timing-review select {
+  width: 110px;
+  margin: 0;
+  min-height: 28px;
+  padding: 5px 8px;
+  font-size: 10px;
+}
+.timing-review > span {
+  font-size: 9px;
+  margin-left: auto;
+  text-align: right;
+}
+@media (max-width: 760px) {
+  .timing-review > span {
+    max-width: 180px;
+    font-size: 8px;
+  }
+}

@@ -13,48 +13,33 @@ export const DIFFICULTIES = Object.freeze([
 const PROFILES = {
   Easy: {
     rank: 1,
-    step: 2,
-    fill: 0.7,
     handGap: 0.68,
     gap: 0.36,
     njs: 10,
-    doubles: 0,
   },
   Normal: {
     rank: 3,
-    step: 1,
-    fill: 0.76,
     handGap: 0.46,
     gap: 0.25,
     njs: 12,
-    doubles: 0.08,
   },
   Hard: {
     rank: 5,
-    step: 0.5,
-    fill: 0.7,
     handGap: 0.3,
     gap: 0.15,
     njs: 14,
-    doubles: 0.15,
   },
   Expert: {
     rank: 7,
-    step: 0.5,
-    fill: 0.95,
     handGap: 0.22,
     gap: 0.1,
     njs: 15,
-    doubles: 0.24,
   },
   ExpertPlus: {
     rank: 9,
-    step: 0.25,
-    fill: 1.06,
     handGap: 0.16,
     gap: 0.085,
     njs: 16,
-    doubles: 0.32,
   },
 };
 
@@ -80,8 +65,8 @@ function seedNumber(seed) {
   return hash >>> 0;
 }
 
-// A coordinate hash makes a motif repeat independently of how many notes the
-// previous difficulty happened to accept, and keeps all controls reproducible.
+// This hash chooses sparse wall/bomb sides only. Musical hit selection and
+// exact note timing never use random draws.
 function noise(seed, a, b = 0) {
   let x =
     (seed ^ Math.imul(a | 0, 374761393) ^ Math.imul(b | 0, 668265263)) >>> 0;
@@ -110,7 +95,10 @@ function normalizeAnalysis(analysis) {
     throw new RangeError("Please trim the audio to two hours or less.");
   const offset = finite(analysis.offset, 0);
   const bpm = analysis.bpm;
-  const onsets = (analysis.onsets ?? [])
+  const hasAcousticEvidence =
+    Object.hasOwn(analysis, "rhythmEvents") ||
+    Object.hasOwn(analysis, "onsets");
+  const onsets = (analysis.rhythmEvents ?? analysis.onsets ?? [])
     .map((o) =>
       typeof o === "number"
         ? { time: o, strength: 0.7, low: 0.33, mid: 0.34, high: 0.33 }
@@ -193,6 +181,8 @@ function normalizeAnalysis(analysis) {
     timeAt,
     beatAt,
     onsetByQuarter,
+    hasAcousticEvidence,
+    beatTimes: analysis.beatTimes ?? [],
     endBeat: Math.max(0, beatAt(analysis.duration - 0.45)),
     startBeat: Math.max(0, beatAt(Math.min(1.25, analysis.duration * 0.2))),
   };
@@ -204,14 +194,24 @@ function makeWalls(context, level, seed, enabled) {
   const spacing = level < 2 ? 64 : 32;
   for (let beat = spacing / 2; beat + 3 < context.endBeat; beat += spacing) {
     if (beat < context.startBeat) continue;
-    const time = context.timeAt(beat);
-    if (context.energyAt(time) < 0.045) continue;
+    let time = context.timeAt(beat);
+    if (context.hasAcousticEvidence) {
+      const nearby = context.onsets
+        .filter(
+          (event) => Math.abs(event.time - time) <= (0.75 * 60) / context.bpm,
+        )
+        .sort((a, b) => b.strength - a.strength);
+      if (!nearby.length) continue;
+      time = nearby[0].time;
+    }
+    const wallBeat = context.beatAt(time);
+    if (context.energyAt(time + 0.04) < 0.045) continue;
     const side =
       (Math.floor(beat / spacing) + Math.floor(noise(seed, 912) * 2)) % 2;
     // Single edge walls frame phrases while preserving both central lanes.
     // Clamp duration in seconds so high/low BPM cannot produce long holds.
     result.push({
-      beat: round(beat),
+      beat: round(wallBeat),
       x: side ? 3 : 0,
       y: 0,
       width: 1,
@@ -253,123 +253,261 @@ function chooseDirection(lastDirection, down, diagonal, sign) {
   return a[0] * b[0] + a[1] * b[1] <= -0.7 ? desired : vertical;
 }
 
-function phraseStyle(seed, phrase, style) {
-  // Six 16-beat spatial motifs: anchors, fans, staircases, pulses, ribbons,
-  // and mirrored sweeps. Reuse motif choice every four phrases for identity.
-  const repeatedPhrase = phrase % 4;
-  const shift =
-    style === "dance"
-      ? 2
-      : style === "technical"
-        ? 4
-        : style === "cinematic"
-          ? 1
-          : 0;
-  return (Math.floor(noise(seed, repeatedPhrase, 33) * 6) + shift) % 6;
+/** Rank only observed attacks. A phase signature describes a bar's rhythm,
+ * never changes its timestamps, and makes repeated musical ideas share motion.
+ */
+function buildRhythm(context) {
+  let source = context.onsets;
+  const synthetic = !context.hasAcousticEvidence;
+  if (synthetic) {
+    source = context.beatTimes.length
+      ? context.beatTimes.map((time) => ({
+          time,
+          strength: 0.6,
+          confidence: 0.5,
+          kind: "synthetic",
+        }))
+      : Array.from(
+          { length: Math.max(0, Math.floor(context.endBeat) + 1) },
+          (_, beat) => ({
+            time: context.timeAt(beat),
+            strength: 0.6,
+            confidence: 0.5,
+            kind: "synthetic",
+          }),
+        );
+  }
+  const events = [];
+  for (const raw of source) {
+    const beat = context.beatAt(raw.time);
+    const energy = Math.max(
+      context.energyAt(raw.time),
+      context.energyAt(raw.time + 0.04),
+    );
+    if (beat < context.startBeat || beat > context.endBeat || energy < 0.035)
+      continue;
+    const strength = clamp(finite(raw.strength, 0.6));
+    const confidence = clamp(finite(raw.confidence, 0.8));
+    if (confidence < 0.15 || strength < 0.035) continue;
+    const inferredKind =
+      finite(raw.low, 0) > 0.5
+        ? "kick"
+        : finite(raw.high, 0) > 0.45
+          ? "high"
+          : "mid";
+    const kind = raw.kind ?? inferredKind;
+    const event = {
+      ...raw,
+      beat,
+      strength,
+      confidence,
+      energy,
+      kind,
+      bar: Math.floor((beat + 0.015) / 4),
+      phase: ((beat % 4) + 4) % 4,
+    };
+    // Multi-band detectors may return the same attack more than once.
+    // Keep the stronger original timestamp rather than inventing an average.
+    const previous = events.at(-1);
+    if (previous && event.time - previous.time < 0.055) {
+      if (strength * confidence > previous.strength * previous.confidence)
+        events[events.length - 1] = event;
+    } else events.push(event);
+  }
+  const bars = new Map();
+  for (const event of events) {
+    if (!bars.has(event.bar)) bars.set(event.bar, []);
+    bars.get(event.bar).push(event);
+  }
+  const phaseCounts = new Map();
+  for (const attacks of bars.values()) {
+    for (const phase of new Set(attacks.map((e) => Math.round(e.phase * 24))))
+      phaseCounts.set(phase, (phaseCounts.get(phase) ?? 0) + 1);
+  }
+  for (const attacks of bars.values()) {
+    const average =
+      attacks.reduce((sum, event) => sum + event.strength, 0) / attacks.length;
+    const peak = Math.max(...attacks.map((event) => event.strength));
+    for (const event of attacks) {
+      const phase = Math.round(event.phase * 24);
+      const repeated = (phaseCounts.get(phase) ?? 1) / Math.max(1, bars.size);
+      const role =
+        event.kind === "kick"
+          ? 0.15
+          : event.kind === "snare"
+            ? 0.12
+            : event.kind === "high"
+              ? 0
+              : 0.04;
+      // Strongly recurring syncopations receive the same musical treatment as
+      // integer beats. Grid position never creates a missing attack.
+      event.salience =
+        event.strength * 0.62 +
+        event.confidence * 0.18 +
+        role +
+        repeated * 0.14;
+      event.slot = Math.round(event.phase * 4);
+      event.impact =
+        event.strength >= peak * 0.92 && event.strength > average * 1.16;
+    }
+  }
+  // Group related rhythms by their stronger percussion skeleton, so a vocal
+  // ornament or small attack jitter does not abruptly replace the movement.
+  const families = [];
+  for (const attacks of bars.values()) {
+    const percussion = attacks.filter(
+      (e) => e.kind === "kick" || e.kind === "snare",
+    );
+    const skeleton = (percussion.length >= 2 ? percussion : attacks)
+      .slice()
+      .sort((a, b) => b.salience - a.salience)
+      .slice(0, 6);
+    const phases = [
+      ...new Set(skeleton.map((e) => Math.round(e.phase * 8) % 32)),
+    ].sort((a, b) => a - b);
+    let family;
+    for (const candidate of families) {
+      const remaining = [...candidate.phases];
+      let matched = 0;
+      for (const phase of phases) {
+        const index = remaining.findIndex(
+          (other) =>
+            Math.min(Math.abs(other - phase), 32 - Math.abs(other - phase)) <=
+            1,
+        );
+        if (index >= 0) {
+          matched++;
+          remaining.splice(index, 1);
+        }
+      }
+      if (matched / Math.max(phases.length, candidate.phases.length) >= 0.66) {
+        family = candidate;
+        break;
+      }
+    }
+    if (!family) {
+      family = { phases, signature: phases.join(",") };
+      families.push(family);
+    }
+    for (const event of attacks) event.signature = family.signature;
+  }
+  return { bars, events, synthetic, signatures: families.length };
 }
 
-function makeNotes(
-  context,
-  profile,
-  level,
-  controls,
-  walls,
-  reservedBombs = [],
-) {
+function chooseRhythm(context, rhythm, profile, level, density) {
+  const output = [];
+  const quotas = [2, 3.25, 5, 7, 10];
+  const gap = Math.max(profile.gap, profile.handGap / 2);
+  for (const attacks of rhythm.bars.values()) {
+    const energy =
+      attacks.reduce((sum, event) => sum + event.energy, 0) / attacks.length;
+    const budget = Math.max(
+      1,
+      Math.round(
+        quotas[level] * (0.55 + density * 0.7) * (0.65 + energy * 0.5),
+      ),
+    );
+    const selected = [];
+    const ranked = [...attacks].sort(
+      (a, b) => b.salience - a.salience || a.time - b.time,
+    );
+    for (const event of ranked) {
+      if (selected.length >= budget) break;
+      if (
+        selected.some((other) => Math.abs(other.time - event.time) < gap - 1e-6)
+      )
+        continue;
+      selected.push(event);
+    }
+    output.push(...selected);
+  }
+  return output.sort((a, b) => a.time - b.time);
+}
+
+function makeNotes(context, rhythm, profile, level, controls, walls) {
   const notes = [];
   const hands = [
     { time: -Infinity, direction: undefined, hits: 0 },
     { time: -Infinity, direction: undefined, hits: 0 },
   ];
   const { seed, density, intensity, style } = controls;
-  let nextHand = Math.floor(noise(seed, 18) * 2);
+  const selected = chooseRhythm(context, rhythm, profile, level, density);
+  const lanePhrases = [
+    [1, 1, 0, 0, 1, 1, 0, 0],
+    [0, 0, 1, 1, 0, 0, 1, 1],
+    [1, 0, 0, 1, 1, 0, 0, 1],
+    [0, 1, 1, 0, 0, 1, 1, 0],
+  ];
+  const styleShift =
+    style === "dance"
+      ? 1
+      : style === "technical"
+        ? 2
+        : style === "cinematic"
+          ? 3
+          : 0;
+  let nextHand = seed % 2;
   let lastHitTime = -Infinity;
-  const firstTick = Math.ceil(context.startBeat / profile.step);
-  const lastTick = Math.floor(context.endBeat / profile.step);
-  for (let tick = firstTick; tick <= lastTick; tick++) {
-    const beat = round(tick * profile.step);
-    const time = context.timeAt(beat);
-    // Give each planned hazard a visible, deliberate rest. The same rest is
-    // maintained on either side so a saber's follow-through cannot hit it.
-    if (
-      reservedBombs.some(
-        (b) => (Math.abs(beat - b.beat) * 60) / context.bpm < 0.72,
-      )
-    )
-      continue;
+  for (const [index, event] of selected.entries()) {
+    const { time, energy, slot, signature } = event;
+    const beat = round(event.beat);
     if (time - lastHitTime < profile.gap - 1e-6) continue;
-    const rawEnergy = context.energyAt(time);
-    // Silence stays empty. Sustained quieter sections are thinned, not filled
-    // with a uniform metronome because the duration happens to be nonzero.
-    if (rawEnergy < 0.035) continue;
-    const section = context.sectionAt(time);
-    const energy = clamp(
-      rawEnergy * 0.6 + (section?.energy ?? rawEnergy) * 0.4,
-    );
-    const onset = context.onsetByQuarter.get(Math.round(beat * 4));
-    const phrase = Math.floor(beat / 16);
-    const inPhrase = beat % 16;
-    const onBeat = Math.abs(beat - Math.round(beat)) < 1e-5;
-    const downbeat = Math.abs(beat / 4 - Math.round(beat / 4)) < 1e-5;
-    const quarter = Math.round(beat * 4) % 2 !== 0;
-    // Fine subdivisions require acoustic evidence, except short, energetic
-    // sixteenth-note fills in the final beat of a phrase.
-    if (
-      quarter &&
-      !onset &&
-      !(energy > 0.78 && inPhrase >= 15 && intensity > 0.6)
-    )
-      continue;
-    // Expert+ transforms the phrase's spatial motif as well as admitting
-    // supported finer rhythm. It remains distinct when the song only has
-    // half-beat acoustic events, without inventing unnecessary extra sounds.
-    const motif =
-      (phraseStyle(seed, phrase, style) + (level === 4 ? 1 : 0)) % 6;
-    const base = profile.fill * (0.38 + density * 0.85) * (0.5 + energy * 0.55);
-    const accent = downbeat ? 0.23 : onBeat ? 0.1 : 0;
-    const evidence = onset ? onset.strength * 0.24 : 0;
-    const phraseBreath = inPhrase >= 14 && energy < 0.5 ? 0.5 : 1;
-    const probability = clamp((base + accent + evidence) * phraseBreath);
-    if (noise(seed, Math.round(beat * 4), 7) > probability) continue;
     const available = (hand) =>
       time - hands[hand].time >= profile.handGap - 1e-6;
     let hand = nextHand;
     if (!available(hand)) hand = 1 - hand;
     if (!available(hand)) continue;
+    // The seed chooses the vocabulary for a rhythmic signature once. It has
+    // no influence on which sounds become notes or their rhythm.
+    const motif =
+      (seedNumber(signature) + seed + styleShift + (level === 4 ? 1 : 0)) %
+      lanePhrases.length;
+    const nextGap = (selected[index + 1]?.time ?? Infinity) - time;
+    const previousGap = time - lastHitTime;
+    const accentedRole = event.kind === "kick" || event.kind === "snare";
     const double =
-      profile.doubles > 0 &&
-      downbeat &&
-      energy > 0.58 &&
+      level >= 2 &&
+      event.impact &&
+      accentedRole &&
+      energy > 0.42 &&
+      intensity > 0.25 &&
       available(0) &&
       available(1) &&
-      noise(seed, Math.round(beat * 4), 17) <
-        profile.doubles * (0.4 + intensity);
+      previousGap >= profile.handGap &&
+      nextGap >= profile.handGap &&
+      (level === 4 ||
+        (level === 3 ? event.bar % 2 === 0 : event.bar % 4 === 0));
     const activeHands = double ? [0, 1] : [hand];
     for (const color of activeHands) {
       const state = hands[color];
       const down = state.hits % 2 === 0;
-      const phase = Math.floor(inPhrase / 2);
-      let inner =
-        level === 0 ||
-        (phase + (motif % 2 ? color : 0) + motif) % (motif === 3 ? 4 : 3) === 0;
-      if (style === "dance") inner = (phase + color + motif) % 4 < 2;
-      if (style === "cinematic") inner = phase % 4 === 0;
+      let inner = level === 0 || !!lanePhrases[motif][slot % 8];
+      if (level === 1) inner = style !== "dance" || event.kind !== "snare";
+      if (style === "cinematic" && !event.impact) inner = false;
       let x = color === 0 ? (inner ? 1 : 0) : inner ? 2 : 3;
       if (wallAt(walls, beat, x, (context.bpm / 60) * 0.25)) {
         inner = true;
         x = color === 0 ? 1 : 2;
       }
-      // Face cells (1,1), (2,1) are never used. Top-row reaches are reserved
-      // for higher difficulties, and upward cuts instead of wide down hits.
-      let y = inner ? (!down && level >= 2 ? 2 : 0) : down ? 1 : 0;
-      if (level === 0) y = 0;
-      if (motif === 2 && level >= 3 && !down && !inner) y = 1;
+      // Pitch is not inferred from energy. Height expresses a clear musical
+      // role: low kicks stay low; stronger high responses can rise.
+      let y = 0;
+      if (level >= 2 && !inner && event.kind === "snare") y = 1;
+      if (
+        level >= 3 &&
+        !down &&
+        inner &&
+        event.kind !== "kick" &&
+        energy > 0.55 &&
+        slot % 4 === 3
+      )
+        y = 2;
       const diagonal =
         level >= 2 &&
         !double &&
         !inner &&
-        noise(seed, phrase % 4, phase + color * 8) < 0.25 + intensity * 0.3;
-      // Outward/down, inward/up arcs stay within each hand's half of the grid.
+        (event.kind === "snare" || (level >= 3 && slot % 4 === 2)) &&
+        intensity > 0.35;
       const sign = down ? (color === 0 ? -1 : 1) : color === 0 ? 1 : -1;
       const direction = chooseDirection(state.direction, down, diagonal, sign);
       notes.push({ beat, x, y, color, direction });
@@ -398,7 +536,12 @@ function nearestNoteDistance(notes, beat) {
 }
 
 function makeBombs(context, notes, walls, level, controls) {
-  if (!controls.bombs || level < 1) return [];
+  if (
+    !controls.bombs ||
+    level < 1 ||
+    (context.hasAcousticEvidence && context.onsets.length < 2)
+  )
+    return [];
   const bombs = [];
   // A higher difficulty should spend its extra motion on music, rather than
   // doubling hazard pauses. At 128 BPM this is one bomb roughly every 15 s.
@@ -532,18 +675,18 @@ export function generateMaps(
     bombs,
     lights,
   };
+  const rhythm = buildRhythm(context);
   const maps = {};
   for (const [level, difficulty] of DIFFICULTIES.entries()) {
     const profile = PROFILES[difficulty];
     const obstacles = makeWalls(context, level, controls.seed, walls);
-    const reservedBombs = makeBombs(context, [], obstacles, level, controls);
     const notes = makeNotes(
       context,
+      rhythm,
       profile,
       level,
       controls,
       obstacles,
-      reservedBombs,
     );
     const bombNotes = makeBombs(context, notes, obstacles, level, controls);
     const events = makeLights(context, controls, bombNotes);
@@ -560,7 +703,10 @@ export function generateMaps(
       duration: context.duration,
       difficulty,
       generation: {
-        version: 1,
+        version: 2,
+        timingSource: rhythm.synthetic ? "synthetic-grid" : "acoustic-attacks",
+        acousticEvents: rhythm.synthetic ? 0 : rhythm.events.length,
+        rhythmicSignatures: rhythm.signatures,
         seed,
         density: controls.density,
         intensity: controls.intensity,

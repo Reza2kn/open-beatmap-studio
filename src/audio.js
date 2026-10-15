@@ -72,7 +72,42 @@ export function pickOnsets(envelope, frameDuration) {
   return out;
 }
 
-function phaseFit(onsets, bpm) {
+/** Refine centered FFT peaks to the physical energy-rise edge, locally only. */
+export function refineOnsetTimes(samples, sampleRate, onsets) {
+  return onsets
+    .map((onset) => {
+      const first = Math.max(0, Math.floor((onset.time - 0.025) * sampleRate));
+      const last = Math.min(
+        samples.length,
+        Math.ceil((onset.time + 0.07) * sampleRate),
+      );
+      const prefix = new Float64Array(last - first + 1);
+      for (let i = first; i < last; i++)
+        prefix[i - first + 1] = prefix[i - first] + samples[i] ** 2;
+      const width = Math.max(2, Math.round(0.004 * sampleRate)),
+        delay = Math.max(width, Math.round(0.012 * sampleRate));
+      const stride = Math.max(1, Math.round(0.001 * sampleRate));
+      const energy = (i) =>
+        (prefix[Math.min(prefix.length - 1, i + width)] -
+          prefix[Math.max(0, i)]) /
+        width;
+      const slopes = [];
+      for (let i = delay; i + width < prefix.length; i += stride)
+        slopes.push({ i, rise: Math.max(0, energy(i) - energy(i - delay)) });
+      let peak = 0;
+      for (let i = 1; i < slopes.length; i++)
+        if (slopes[i].rise > slopes[peak].rise) peak = i;
+      if (!slopes[peak] || slopes[peak].rise < 1e-10) return { ...onset };
+      const threshold = slopes[peak].rise * 0.18;
+      let edge = peak;
+      while (edge > 0 && slopes[edge - 1].rise > threshold) edge--;
+      const time = (first + slopes[edge].i) / sampleRate;
+      return { ...onset, time, spectralTime: onset.time };
+    })
+    .sort((a, b) => a.time - b.time);
+}
+
+function phaseFit(onsets, bpm, liftPhase = false) {
   const period = 60 / bpm;
   let x = 0,
     y = 0,
@@ -92,13 +127,32 @@ function phaseFit(onsets, bpm) {
   const harmonic = Math.hypot(x2, y2) * 0.92 > Math.hypot(x, y) ? 2 : 1;
   const phasePeriod = period / harmonic;
   const angle = harmonic === 2 ? Math.atan2(y2, x2) : Math.atan2(y, x);
+  let offset =
+    ((((angle / (2 * Math.PI)) * phasePeriod) % phasePeriod) + phasePeriod) %
+    phasePeriod;
+  if (harmonic === 2 && liftPhase) {
+    // The second harmonic identifies TWO phase branches. Returning only the
+    // first modulo-half-period branch can move the entire map off the drums.
+    const support = (phase) =>
+      onsets.reduce((sum, onset) => {
+        const distance = Math.abs(
+          ((((onset.time - phase + period / 2) % period) + period) % period) -
+            period / 2,
+        );
+        return (
+          sum +
+          onset.strength ** 1.5 *
+            (0.2 + 0.8 * (onset.low ?? 1) ** 2) *
+            Math.exp(-0.5 * (distance / Math.min(0.04, period * 0.12)) ** 2)
+        );
+      }, 0);
+    if (support(offset + phasePeriod) > support(offset)) offset += phasePeriod;
+  }
   return {
     coherence:
       (harmonic === 2 ? Math.hypot(x2, y2) * 0.92 : Math.hypot(x, y)) /
       Math.max(1e-9, weight),
-    offset:
-      ((((angle / (2 * Math.PI)) * phasePeriod) % phasePeriod) + phasePeriod) %
-      phasePeriod,
+    offset,
   };
 }
 
@@ -174,6 +228,13 @@ export function estimateTempo(
         const fit = phaseFit(sampled, bpm);
         if (fit.coherence > best.coherence) best = { ...fit, bpm };
       }
+      // Coarse 0.04 BPM steps accumulate audible drift over a full song.
+      const coarse = best.bpm;
+      for (let bpm = coarse - 0.04; bpm <= coarse + 0.04; bpm += 0.001) {
+        if (bpm < 55 || bpm > 200) continue;
+        const fit = phaseFit(sampled, bpm);
+        if (fit.coherence > best.coherence) best = { ...fit, bpm };
+      }
       return {
         ...candidate,
         ...best,
@@ -181,7 +242,16 @@ export function estimateTempo(
       };
     })
     .sort((a, b) => b.score - a.score);
-  const best = refined[0];
+  let best = refined[0];
+  // When both octaves explain the audio almost equally, prefer the slower
+  // human pulse instead of allowing resampling noise to flip tempo and phase.
+  const half = refined.find(
+    (c) =>
+      Math.abs((c.bpm * 2) / best.bpm - 1) < 0.015 &&
+      c.score >= best.score * 0.95,
+  );
+  if (best.bpm > 145 && half) best = half;
+  best = { ...best, ...phaseFit(sampled, best.bpm, true) };
   // Half/double candidates can be equally plausible. Expose alternatives and reduce confidence.
   const runnerUp = refined.find(
     (candidate) => Math.abs(Math.log2(candidate.bpm / best.bpm)) > 0.15,
@@ -195,12 +265,12 @@ export function estimateTempo(
     1,
   );
   return {
-    bpm: Math.round(best.bpm * 100) / 100,
+    bpm: Math.round(best.bpm * 1000) / 1000,
     offset: best.offset,
     confidence,
     tempoCandidates: refined
       .slice(0, 3)
-      .map((c) => ({ bpm: Math.round(c.bpm * 100) / 100, score: c.score })),
+      .map((c) => ({ bpm: Math.round(c.bpm * 1000) / 1000, score: c.score })),
   };
 }
 
@@ -288,6 +358,10 @@ export async function analyzeAudio(
     mono[i] = sum / count;
     if (i && i % 150000 === 0) await yieldUI();
   }
+  let monoPeak = 0;
+  for (const v of mono) monoPeak = Math.max(monoPeak, Math.abs(v));
+  if (monoPeak > 1e-7)
+    for (let i = 0; i < mono.length; i++) mono[i] /= monoPeak;
   const n = 1024,
     hop = 128,
     frameDuration = hop / rate,
@@ -335,11 +409,19 @@ export async function analyzeAudio(
     bands.push([low, mid, high]);
     if (frame && frame % 160 === 0) await yieldUI();
   }
-  const picked = pickOnsets(envelope, frameDuration);
+  const picked = refineOnsetTimes(
+    mono,
+    rate,
+    pickOnsets(envelope, frameDuration),
+  ).map((onset) => {
+    const [low, mid, high] = bands[onset.frame],
+      total = low + mid + high || 1;
+    return { ...onset, low: low / total, mid: mid / total, high: high / total };
+  });
   await yieldUI();
   const tempo = estimateTempo(envelope, frameDuration, picked);
   const bpm = bpmOverride != null ? Number(bpmOverride) : tempo.bpm;
-  const fitted = bpmOverride != null ? phaseFit(picked, bpm) : tempo;
+  const fitted = bpmOverride != null ? phaseFit(picked, bpm, true) : tempo;
   let offset = offsetOverride != null ? Number(offsetOverride) : fitted.offset;
   // A phase just before the first beat is represented as a small negative offset.
   if (offsetOverride == null && offset > (60 / bpm) * 0.85) offset -= 60 / bpm;
@@ -364,6 +446,26 @@ export async function analyzeAudio(
       total = low + mid + high || 1;
     return { ...onset, low: low / total, mid: mid / total, high: high / total };
   });
+  const rhythmEvents = onsets.map((onset) => {
+    const kind =
+      onset.low > 0.55
+        ? "kick"
+        : onset.high > 0.35
+          ? "high"
+          : onset.mid > 0.4
+            ? "snare"
+            : "mid";
+    const beat = ((onset.time - offset) * bpm) / 60;
+    return {
+      ...onset,
+      beat,
+      gridBeat: Math.round(beat * 4) / 4,
+      gridError: ((beat - Math.round(beat * 4) / 4) * 60) / bpm,
+      confidence: clamp(Math.sqrt(onset.strength), 0, 1),
+      kind,
+      source: "acoustic",
+    };
+  });
   const beatTimes = [];
   if (maxRms > 1e-8)
     for (
@@ -379,13 +481,49 @@ export async function analyzeAudio(
     duration,
     confidence: tempo.confidence,
     onsets,
+    rhythmEvents,
     sections: detectSections(energy, frameDuration, bpm, duration),
     waveform,
     energy,
     beatTimes,
     frameDuration,
     tempoCandidates: tempo.tempoCandidates,
-    method: "spectral-flux-autocorrelation",
+    method: "attack-refined-spectral-flux",
     silent: maxRms < 1e-8,
+  };
+}
+
+/** Changing the analytical grid must not quantize observed attack timestamps. */
+export function retimeAnalysis(analysis, bpm, offset) {
+  const beatTimes = [];
+  if (bpm > 0 && Number.isFinite(offset) && !analysis.silent) {
+    for (
+      let b = Math.ceil((-offset * bpm) / 60);
+      offset + (b * 60) / bpm < analysis.duration;
+      b++
+    )
+      beatTimes.push(offset + (b * 60) / bpm);
+  }
+  return {
+    ...analysis,
+    bpm,
+    offset,
+    beatTimes,
+    rhythmEvents: analysis.rhythmEvents?.map((e) => {
+      const beat = ((e.time - offset) * bpm) / 60,
+        gridBeat = Math.round(beat * 4) / 4;
+      return {
+        ...e,
+        beat,
+        gridBeat,
+        gridError: ((beat - gridBeat) * 60) / bpm,
+      };
+    }),
+    sections: detectSections(
+      analysis.energy,
+      analysis.frameDuration,
+      bpm,
+      analysis.duration,
+    ),
   };
 }

@@ -33,3 +33,19 @@ A live HTTP bridge import of Blender's [Sintel trailer](https://www.youtube.com/
 - Broad browser/codec/device matrix, screen-reader and keyboard acceptance, touch-device practice support.
 - Representative real music evaluation, variable-tempo alignment and expert mapper feedback. Current BPM/phrase/drop labels are heuristics.
 - Hosted-page-to-loopback YouTube import can depend on browser mixed-content/local-network policy. The localhost studio is the reliable intended bridge configuration.
+
+## Rhythm repair after real user feedback, 2026-10-15
+
+The initial release's passing structural tests did not establish musical quality. The user's supplied “512” recording is now the local regression fixture; its SHA-256 is checked locally so the test cannot silently substitute another recording. The source repository contains no recording or beat-reference asset. `tests/real-audio.test.js` reads the ignored local fixture configuration or `BEATMAP_TEST_AUDIO`; clean public CI explicitly skips that private-file test.
+
+Measured against independent Beat This! small0 estimates over the reliable 8–160-second main body, the failing old mono analysis was about 154 ms off at the median. The repaired analyzer is about 8 ms off at the median, with p90 about 19 ms. These are reference-model agreement figures, not human annotations. Gain/channel/sample-rate perturbations no longer trigger the observed 176 BPM/wrong-phase flip. The corrected DSP pulse is 87.998 BPM; the model's fitted estimate is about 88.002 BPM.
+
+Random grid thinning was removed. The new mapper selects observed attacks, preserves their precise times and syncopations, simplifies the musical rhythm by difficulty, and assigns recurring rhythm families consistent movement vocabulary. Changing the seed changes movement vocabulary without inventing another note rhythm. Bombs use natural rests instead of deleting musical events to create hazard gaps.
+
+On the mono diagnostic path, the old Hard map placed about 45% of its notes within 35 ms of a refined detected attack; the old stereo map reached about 66%. Every note in the new maps preserves an observed attack timestamp to within beat-serialization rounding (<0.04 ms). That preservation is a pipeline property measured against the app's own detections, not independent proof that every detection is musically appropriate. The same path generated 134/201/355/508/720 notes; browser decoding at 48 kHz can change a few marginal attack selections. All five passed static movement checks.
+
+Preview timing now follows the speaker-output clock where available, falling back to reported output latency. A visible cut frame and automatic preview cuts mark each intended hit; blocks no longer continue looming past the player for a quarter-second in autoplay. Beat-click and note-click modes provide audible timing review, scheduled on the same audio clock. Waveform annotations show generated hit timestamps. BPM controls retain millibpm precision instead of rounding the estimate to one decimal place on regeneration.
+
+Remaining acceptance is listening and gameplay judgment across varied music and actual headsets. Exact timestamp preservation, static checks and model agreement do not certify aesthetic quality or VR comfort.
+
+The corrected source passes **59 local tests**, including the private recording regression. Public CI runs the same suite with the explicitly unavailable private-song case skipped. The source build passes. The reference model's temporary Python environment was removed after verification; its local beat estimates, provenance and aggregate diagnostics are retained.
