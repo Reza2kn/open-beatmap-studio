@@ -23,18 +23,31 @@ npm run preview
 
 ## What works
 
-- Browser audio decoding and trimming, FFT spectral-flux onsets, approximate constant BPM/phase, spectral-band balance, RMS energy and sixteen-beat phrase sections.
+- Browser audio decoding/trimming, harmonic-percussive median separation, refined transient attacks, approximate constant BPM/phase, RMS energy and sixteen-beat phrase windows.
 - Editable BPM/grid offset, half/double tempo controls, deterministic seeds, density, four choreography styles, optional walls/bombs/lighting.
-- Easy, Normal, Hard, Expert and Expert+ Standard maps that select observed acoustic attacks, preserve syncopation, repeat movement vocabulary for recurring rhythms, and simplify by difficulty, with hand alternation, parity and hazard-clearance safeguards. Difficulty names are generated profiles, not ranked-map certification.
+- Easy, Normal, Hard, Expert and Expert+ Standard maps that prioritize repeated kick/snare grooves, use rhythmic melodic attacks in drumless passages, repeat movement phrases and simplify the same groove across difficulty profiles, with hand alternation, parity and hazard-clearance safeguards. Difficulty names are generated profiles, not ranked-map certification.
 - **Advanced native Weave lighting:** individual fixture color waves, complementary color halves, brightness gradients, index filters, eased X/Y beam rotations, distributed fans, bass/percussion accents, phrase builds and energy-jump blooms, dim rests and final blackout. No Chroma dependency. Brightness and motion controls; a dedicated lightshow view.
 - Three.js browser stage with a visible cut frame and automatic cuts on mapped attacks, beat-click/note-click timing review, waveform hit annotations, speaker-clock synchronization, seeking, playback speed/volume, mouse practice with directional red/blue cuts, score, combo, bombs and wall penalties. Left click for red and right click for blue; hold and drag in the arrow direction. Space toggles playback outside form fields.
 - Worker-based real Vorbis encoding and ZIP export with `Info.dat`, five `.dat` difficulty files, `song.ogg` and square PNG cover art. Optional uploaded cover, title/artist/mapper metadata.
 
 Audio analysis, mapping, preview, encoding and ZIP creation run on your device. No API keys, hosted inference or paid services. Assets and encoder are bundled and self-hosted. Loading the app still requires a web server; this version does not install an offline service worker.
 
+## Learned beat tracking: optional local model
+
+Browser pulse mode needs no downloads. For learned drum separation and tracking, install [Demucs](https://github.com/facebookresearch/demucs) htdemucs and [Beat This!](https://github.com/CPJKU/beat_this) small0 with their local CPU runtime once:
+
+```sh
+npm run model:setup
+npm run bridge
+```
+
+In **Beat tracker**, choose **Local neural drums + beats**, expand **Beat tracker setup**, paste the temporary companion key, then generate. The browser sends the trimmed audio as mono PCM to your own authenticated `127.0.0.1` companion. No hosted inference is involved. Setup requires Python 3.10–3.13 (Python 3.12 recommended), installs an isolated `.model-venv`, and downloads weights to ignored `.model-cache`. The Python/PyTorch runtime is substantially larger than the roughly 8.1 MB beat tracker and 80 MB drum separator checkpoints. Neural separation can take a few minutes per song on a CPU. Model predictions are estimates, especially in breaks and ambiguous meter; they are not manual beat annotations.
+
+The arranger uses the pulse as a timing reference, then selects audible instrument attacks. Separated kick/snare patterns form the main groove; aligned melodic attacks lead in drumless passages. Easy and Normal select simpler repeating subsets, while Hard through Expert+ retain more of the groove and supported percussion fills. Browser HPSS is an approximate transient separator and can confuse vocals or piano with drums; the local neural path uses an actual learned drum stem. The seed changes movement rather than rhythm. The same rhythmic events also direct lightshow accents. A browser-only ONNX port is not yet implemented.
+
 ## YouTube: optional local bridge
 
-Direct YouTube media downloads do not reliably work inside browser CORS and media-access restrictions. A small opt-in loopback companion uses local `yt-dlp` and FFmpeg. `bridge:setup` creates a project-local Python virtual environment and does not modify your global Python packages. You can instead install yt-dlp yourself, or set `BEATMAP_YTDLP` to an executable path. It never receives your uploaded local audio.
+Direct YouTube media downloads do not reliably work inside browser CORS and media-access restrictions. A small opt-in loopback companion uses local `yt-dlp` and FFmpeg. `bridge:setup` creates a project-local Python virtual environment and does not modify your global Python packages. You can instead install yt-dlp yourself, or set `BEATMAP_YTDLP` to an executable path. It receives uploaded audio only when you explicitly choose the local neural tracker above.
 
 ```sh
 # macOS; install equivalent packages on other platforms
@@ -60,7 +73,7 @@ The stock games do not directly import arbitrary map ZIPs. No Noodle Extensions 
 
 Automated tests exercise known-tempo PCM and phase recovery, silence, energy structure, 560 tempo/seed/style/difficulty combinations, note/hazard collision and parity checks, native lighting group/filter/axis/timing validation, real Ogg CRC/header checks, ZIP round-tripping, and a complete PCM-to-export integration. Browser QA additionally checks playback, controls, trimming and worker-encoded ZIP downloads. See [verification notes](docs/verification.md) for dated outcomes and remaining checks.
 
-Tempo estimation is heuristic and may choose half/double time. Listen and adjust timing before exporting. Sections are energy-based phrase windows, not a learned verse/chorus detector. Variable-tempo beat grids, automatic timing drift correction, exact drum/stem separation, custom enemies, editor-style per-note authoring, ranked-quality guarantees, and VR controller simulation are not implemented. Bombs are the game's standard hazard; arbitrary enemies are not part of this Standard export format.
+Tempo estimation is heuristic and may choose half/double time. Listen and adjust timing before exporting. Sections are energy-based phrase windows, not a learned verse/chorus detector. Browser-only variable-tempo tracking, manual stem editing, custom enemies, editor-style per-note authoring, ranked-quality guarantees, and VR controller simulation are not implemented. Bombs are the game's standard hazard; arbitrary enemies are not part of this Standard export format.
 
 ## Test your own recording
 
@@ -68,7 +81,7 @@ Tempo estimation is heuristic and may choose half/double time. Listen and adjust
 BEATMAP_TEST_AUDIO="/absolute/path/to/song.mp3" npm test
 ```
 
-The optional real-audio test uses local FFmpeg, checks that every generated hit preserves an observed attack, and exercises all five difficulty safeguards. It does not upload or bundle the song. A local `.local-tests/audio-fixture.json` can additionally pin the recording hash and an independently estimated beat reference; that directory is ignored by Git. The supplied “512” recording is configured this way in the development checkout. See the [real-song repair evidence](docs/verification.md#rhythm-repair-after-real-user-feedback-2026-10-15) for the original failure, measured correction and limits.
+The optional real-audio test uses local FFmpeg, checks musical-pulse coverage against an independent stored beat estimate when available, and exercises all five difficulty safeguards. It does not upload or bundle the song. A local `.local-tests/audio-fixture.json` can additionally pin the recording hash and an independently estimated beat reference; that directory is ignored by Git. The supplied “512” recording is configured this way in the development checkout. See the [real-song repair evidence](docs/verification.md#drum-first-replacement-after-second-rejection-2026-10-15) for the original failure, measured correction and limits.
 
 ## Research and architecture
 
@@ -79,7 +92,7 @@ Three research agents investigated format/platform support, audio features/local
 - [Native lightshow research, verified fixture groups and cue API](docs/lighting-research.md)
 - [Export format and PC/Quest compatibility evidence](docs/compatibility.md)
 
-The strongest compact learned beat-tracking lead is **Beat This! small0**. A validated ONNX/WebGPU/browser port is future work; no learned model is used in this release. Tiny decision models could score constrained phrase candidates, but deterministic safety checks should remain authoritative. No claim is made that a Jev-like model is already suitable or integrated.
+The strongest compact learned beat-tracking lead is **Beat This! small0**. It is integrated through the optional CPU companion alongside learned drum separation. A validated ONNX/WebGPU/browser port is future work. Tiny decision models could score constrained phrase candidates, but deterministic safety checks should remain authoritative. No claim is made that a Jev-like model is already suitable or integrated.
 
 ```text
 src/audio.js           decoded PCM → rhythmic/energy descriptors
@@ -89,7 +102,8 @@ src/preview.js         Three.js stage + approximate mouse practice
 src/media.js           trim, original synth demo, audio-clock transport
 src/encode.worker.js   PCM → Ogg Vorbis in a worker
 src/export.js          validated Standard v3 map files → ZIP
-server/bridge.mjs      optional authenticated local YouTube importer
+server/bridge.mjs      optional authenticated local importer + learned inference
+server/beat-model.py   Beat This! beats + Demucs drum attacks (optional)
 ```
 
 ## License and credits

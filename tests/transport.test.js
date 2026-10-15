@@ -44,3 +44,27 @@ test("play starts at the requested position and latency does not move it backwar
   t.pause();
   assert.ok(Math.abs(t.position - 30.05) < 1e-9);
 });
+
+test("seeking on an established audio clock holds at the new position until its output starts", async () => {
+  const context = {
+    currentTime: 100,
+    outputLatency: 0.04,
+    baseLatency: 0.01,
+    destination: {},
+    resume: async () => {},
+    createGain: () => ({ connect() {}, gain: {} }),
+    createBufferSource: () => ({
+      connect() {}, start() {}, stop() {}, disconnect() {}, playbackRate: {},
+    }),
+  };
+  const transport = new Transport(context);
+  transport.load({ duration: 60 });
+  transport.seek(30);
+  await transport.play();
+  assert.equal(transport.time, 30);
+  context.currentTime = 100.025;
+  assert.equal(transport.time, 30);
+  context.currentTime = 100.1;
+  assert.ok(Math.abs(transport.time - 30.05) < 1e-9);
+  transport.pause();
+});

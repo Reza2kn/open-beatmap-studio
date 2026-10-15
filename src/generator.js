@@ -97,7 +97,7 @@ function normalizeAnalysis(analysis) {
   const bpm = analysis.bpm;
   const hasAcousticEvidence =
     Object.hasOwn(analysis, "rhythmEvents") ||
-    Object.hasOwn(analysis, "onsets");
+    Object.hasOwn(analysis, "onsets") || Object.hasOwn(analysis, "percussionEvents");
   const onsets = (analysis.rhythmEvents ?? analysis.onsets ?? [])
     .map((o) =>
       typeof o === "number"
@@ -176,6 +176,10 @@ function normalizeAnalysis(analysis) {
     duration: analysis.duration,
     sections,
     onsets,
+    percussionSource: analysis.percussionSource ?? analysis.percussionMethod ?? "",
+    drumActiveRanges: Array.isArray(analysis.drumQuality?.activeRanges) ? analysis.drumQuality.activeRanges : null,
+    percussionEvents: Array.isArray(analysis.percussionEvents) ? analysis.percussionEvents.filter(event => Number.isFinite(event.time)).sort((a, b) => a.time - b.time) : null,
+    melodicEvents: (analysis.melodicEvents ?? []).filter(event => Number.isFinite(event.time)).sort((a, b) => a.time - b.time),
     energyAt,
     sectionAt,
     timeAt,
@@ -183,6 +187,9 @@ function normalizeAnalysis(analysis) {
     onsetByQuarter,
     hasAcousticEvidence,
     beatTimes: analysis.beatTimes ?? [],
+    modelBeatTimes: analysis.modelBeatTimes ?? [],
+    beatSource: analysis.beatSource ?? "inferred",
+    silent: analysis.silent === true,
     endBeat: Math.max(0, beatAt(analysis.duration - 0.45)),
     startBeat: Math.max(0, beatAt(Math.min(1.25, analysis.duration * 0.2))),
   };
@@ -195,15 +202,9 @@ function makeWalls(context, level, seed, enabled) {
   for (let beat = spacing / 2; beat + 3 < context.endBeat; beat += spacing) {
     if (beat < context.startBeat) continue;
     let time = context.timeAt(beat);
-    if (context.hasAcousticEvidence) {
-      const nearby = context.onsets
-        .filter(
-          (event) => Math.abs(event.time - time) <= (0.75 * 60) / context.bpm,
-        )
-        .sort((a, b) => b.strength - a.strength);
-      if (!nearby.length) continue;
-      time = nearby[0].time;
-    }
+    const anchors = context.wallPulses ?? [];
+    if (anchors.length) time = anchors.reduce((nearest, pulse) => Math.abs(pulse.time - time) < Math.abs(nearest.time - time) ? pulse : nearest).time;
+    else if (context.hasAcousticEvidence) continue;
     const wallBeat = context.beatAt(time);
     if (context.energyAt(time + 0.04) < 0.045) continue;
     const side =
@@ -253,175 +254,325 @@ function chooseDirection(lastDirection, down, diagonal, sign) {
   return a[0] * b[0] + a[1] * b[1] <= -0.7 ? desired : vertical;
 }
 
-/** Rank only observed attacks. A phase signature describes a bar's rhythm,
- * never changes its timestamps, and makes repeated musical ideas share motion.
- */
-function buildRhythm(context) {
-  let source = context.onsets;
-  const synthetic = !context.hasAcousticEvidence;
-  if (synthetic) {
-    source = context.beatTimes.length
-      ? context.beatTimes.map((time) => ({
-          time,
-          strength: 0.6,
-          confidence: 0.5,
-          kind: "synthetic",
-        }))
-      : Array.from(
-          { length: Math.max(0, Math.floor(context.endBeat) + 1) },
-          (_, beat) => ({
-            time: context.timeAt(beat),
-            strength: 0.6,
-            confidence: 0.5,
-            kind: "synthetic",
-          }),
-        );
+const median = values => {
+  if (!values.length) return 0;
+  const sorted = [...values].sort((a, b) => a - b);
+  const middle = sorted.length >>> 1;
+  return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2;
+};
+
+/** A learned quarter-pulse is the timing authority. Broadband attacks provide
+ * subdivision evidence, never a replacement for that musical pulse. */
+function buildPulse(context) {
+  const clean = values => [...new Set(values.map(value => typeof value === 'number' ? value : value?.time)
+    .filter(time => Number.isFinite(time) && time >= 0 && time <= context.duration))].sort((a, b) => a - b);
+  const learned = clean(context.modelBeatTimes);
+  const inferred = clean(context.beatTimes);
+  const supplied = learned.length >= 4 ? learned : inferred;
+  const source = learned.length >= 4 || context.beatSource === 'learned' ? 'learned' : 'inferred';
+  const synthetic = !context.hasAcousticEvidence && supplied.length < 4;
+  if (context.silent || (supplied.length < 4 && context.hasAcousticEvidence && context.onsets.length + (context.percussionEvents?.length ?? 0) + context.melodicEvents.length < 4)) {
+    return { pulses: [], source, smoothed: false, synthetic, period: 60 / context.bpm };
+  }
+  if (supplied.length < 4) {
+    const period = 60 / context.bpm;
+    const pulses = [];
+    for (let index = 0; context.timeAt(index) <= context.duration - .45; index++) {
+      if (context.timeAt(index) >= 0) pulses.push({ time: context.timeAt(index), index });
+    }
+    return { pulses, source: synthetic ? 'synthetic' : 'inferred', smoothed: false, synthetic, period };
+  }
+  const intervals = supplied.slice(1).map((time, index) => time - supplied[index]).filter(interval => interval > .12 && interval < 2.1);
+  const period = median(intervals) || 60 / context.bpm;
+  const intervalMAD = median(intervals.map(interval => Math.abs(interval - period)));
+  // Do not flatten tempo changes or swing. Stable recordings can remove the
+  // detector's frame jitter and fill occasional missed beats with a robust fit.
+  if (intervalMAD / period <= .05) {
+    const scalarPeriod = 60 / context.bpm;
+    const initialPeriod = Math.abs(scalarPeriod - period) < period * .08 ? scalarPeriod : period;
+    const origin = supplied[0];
+    let points = supplied.map(time => ({ time, index: Math.round((time - origin) / initialPeriod) }))
+      .filter(point => Math.abs(point.time - (origin + point.index * initialPeriod)) <= Math.max(.055, period * .13));
+    let fittedOrigin = origin, fittedPeriod = initialPeriod;
+    for (let pass = 0; pass < 2 && points.length >= 4; pass++) {
+      const x = points.reduce((sum, point) => sum + point.index, 0) / points.length;
+      const y = points.reduce((sum, point) => sum + point.time, 0) / points.length;
+      const denominator = points.reduce((sum, point) => sum + (point.index - x) ** 2, 0);
+      fittedPeriod = points.reduce((sum, point) => sum + (point.index - x) * (point.time - y), 0) / denominator;
+      fittedOrigin = y - fittedPeriod * x;
+      points = points.filter(point => Math.abs(point.time - (fittedOrigin + point.index * fittedPeriod)) < Math.max(.04, period * .08));
+    }
+    if (points.length >= supplied.length * .7 && fittedPeriod > .12 && Math.abs(fittedPeriod - period) < period * .08) {
+      const pulses = [];
+      const lastIndex = Math.round((supplied.at(-1) - fittedOrigin) / fittedPeriod);
+      for (let index = 0; index <= lastIndex; index++) pulses.push({ time: fittedOrigin + index * fittedPeriod, index });
+      return { pulses, source, smoothed: true, synthetic: false, period: fittedPeriod };
+    }
+  }
+  return { pulses: supplied.map((time, index) => ({ time, index })), source, smoothed: false, synthetic: false, period };
+}
+
+function positionOnPulse(pulses, time) {
+  let lo = 0, hi = pulses.length - 1;
+  while (lo <= hi) { const mid = (lo + hi) >>> 1; if (pulses[mid].time <= time) lo = mid + 1; else hi = mid - 1; }
+  if (hi < 0 || hi >= pulses.length - 1) return null;
+  return hi + (time - pulses[hi].time) / (pulses[hi + 1].time - pulses[hi].time);
+}
+
+/** Explicit separated percussion changes the backbone from a quarter pulse
+ * into the heard groove. A dembow pattern is not four metronome clicks. */
+function buildPercussionRhythm(context, pulse) {
+  const isolatedDrums = /demucs|isolated-drums|learned-drums/i.test(context.percussionSource)
+    || context.percussionEvents.some(event => /demucs|isolated-drums/i.test(event.source ?? ''));
+  const valid = (source, melodic = false) => {
+    const grouped = new Map();
+    for (const raw of source) {
+      if (isolatedDrums && !melodic && context.drumActiveRanges !== null && !context.drumActiveRanges.some(range => raw.time >= range.start && raw.time <= range.end)) continue;
+      const position = positionOnPulse(pulse.pulses, raw.time);
+      if (position === null) continue;
+      const tick = Math.round(position * 4);
+      const confidence = finite(raw.confidence, .6);
+      const strength = clamp(finite(raw.strength, .5));
+      const beat = context.beatAt(raw.time);
+      const energy = Math.max(context.energyAt(raw.time), context.energyAt(raw.time + .04));
+      if (Math.abs(position - tick / 4) > .10 || confidence < (isolatedDrums && !melodic ? .4 : .35) || strength < (isolatedDrums && !melodic ? .025 : .08)
+        || beat < context.startBeat || beat > context.endBeat || energy < .035) continue;
+      const rawKind = raw.kind === 'hat' ? 'high' : raw.kind;
+      const kind = melodic ? 'melodic' : ['kick','snare','high'].includes(rawKind) ? rawKind : isolatedDrums ? (raw.low > .5 ? 'kick' : 'snare') : 'mid';
+      if (!melodic && !['kick', 'snare', 'high'].includes(kind)) continue;
+      const phaseTick = ((tick % 16) + 16) % 16;
+      const event = { ...raw, time: raw.time, beat, confidence, strength, kind, energy,
+        index: Math.floor(tick / 4), tick, bar: Math.floor(tick / 16), window: Math.floor(tick / 64),
+        phase: phaseTick / 4, phaseTick, slot: Math.floor(tick / 4) % 8,
+        isPulse: tick % 4 === 0, melodic, primary: false };
+      const existing = grouped.get(tick);
+      if (!existing || strength * confidence > existing.strength * existing.confidence) grouped.set(tick, event);
+    }
+    return [...grouped.values()].sort((a, b) => a.time - b.time);
+  };
+  const drums = valid(context.percussionEvents);
+  const melody = valid(context.melodicEvents, true);
+  const windows = new Map();
+  for (const event of [...drums, ...melody]) {
+    if (!windows.has(event.window)) windows.set(event.window, new Map());
+    const key = `${event.melodic ? 'melody' : event.kind === 'high' ? 'high' : 'drum'}:${event.phaseTick}`;
+    const phases = windows.get(event.window);
+    if (!phases.has(key)) phases.set(key, { phase: event.phaseTick, bars: new Set(), strength: 0, count: 0, melodic: event.melodic, high: event.kind === 'high' });
+    const item = phases.get(key);
+    item.bars.add(event.bar); item.strength += event.strength; item.count++;
+  }
+  const regimes = new Map();
+  for (const window of windows.keys()) {
+    const items = drums.filter(event => event.window === window && event.kind !== 'high');
+    const strength = median(items.map(event => event.strength));
+    const dominance = median(items.map(event => finite(event.percussiveRatio, 0)));
+    regimes.set(window, isolatedDrums ? items.length >= 4 && median(items.map(event=>event.confidence)) >= .4 : strength >= .45 || (strength >= .3 && dominance > .6));
+  }
+  const masks = new Map();
+  for (const [window, phases] of windows) {
+    const selected = [...phases.values()].filter(item => item.bars.size >= (item.high ? 3 : 2) && (item.melodic || regimes.get(window)))
+      .map(item => ({ ...item, primary: !item.high && !item.melodic,
+        score: item.strength / item.count + (item.phase % 4 === 0 ? .22 : item.phase % 2 === 0 ? .06 : 0) }))
+      .sort((a, b) => Number(b.primary) - Number(a.primary) || b.score - a.score || a.phase - b.phase);
+    masks.set(window, selected);
+  }
+  const regimeThresholds = new Map();
+  for (const window of windows.keys()) {
+    const strengths = drums.filter(event => event.window === window && event.kind !== 'high').map(event => event.strength).sort((a,b)=>a-b);
+    const strong = strengths[Math.floor(strengths.length * .9)] ?? .75;
+    regimeThresholds.set(window, isolatedDrums ? Math.max(.025, strong * .2) : Math.max(.3, Math.min(.45, strong * .6)));
+  }
+  const coreBars = new Set();
+  for (const event of drums) {
+    const mask = masks.get(event.window) ?? [];
+    event.primary = mask.some(item => item.primary && item.phase === event.phaseTick) && event.kind !== 'high' && event.strength >= regimeThresholds.get(event.window);
+    event.hat = event.kind === 'high' && mask.some(item => item.high && item.phase === event.phaseTick);
+    if (event.primary) coreBars.add(event.bar);
   }
   const events = [];
-  for (const raw of source) {
-    const beat = context.beatAt(raw.time);
-    const energy = Math.max(
-      context.energyAt(raw.time),
-      context.energyAt(raw.time + 0.04),
-    );
-    if (beat < context.startBeat || beat > context.endBeat || energy < 0.035)
-      continue;
-    const strength = clamp(finite(raw.strength, 0.6));
-    const confidence = clamp(finite(raw.confidence, 0.8));
-    if (confidence < 0.15 || strength < 0.035) continue;
-    const inferredKind =
-      finite(raw.low, 0) > 0.5
-        ? "kick"
-        : finite(raw.high, 0) > 0.45
-          ? "high"
-          : "mid";
-    const kind = raw.kind ?? inferredKind;
-    const event = {
-      ...raw,
-      beat,
-      strength,
-      confidence,
-      energy,
-      kind,
-      bar: Math.floor((beat + 0.015) / 4),
-      phase: ((beat % 4) + 4) % 4,
-    };
-    // Multi-band detectors may return the same attack more than once.
-    // Keep the stronger original timestamp rather than inventing an average.
-    const previous = events.at(-1);
-    if (previous && event.time - previous.time < 0.055) {
-      if (strength * confidence > previous.strength * previous.confidence)
-        events[events.length - 1] = event;
-    } else events.push(event);
+  for (const event of drums) {
+    const mask = masks.get(event.window) ?? [];
+    event.fill = !event.primary && !event.hat && event.confidence >= .8 && event.strength >= (isolatedDrums ? regimeThresholds.get(event.window) : .45) && mask.some(item => item.primary);
+    if (!event.primary && !event.hat && !event.fill) continue;
+    event.signature = `groove:${mask.filter(item => item.primary).map(item => item.phase).sort((a,b) => a-b).join(',')}`;
+    event.impact = event.primary && event.phaseTick % 8 === 0 && event.strength > .55;
+    events.push(event);
   }
-  const bars = new Map();
-  for (const event of events) {
-    if (!bars.has(event.bar)) bars.set(event.bar, []);
-    bars.get(event.bar).push(event);
+  for (const event of melody) {
+    if (coreBars.has(event.bar)) continue;
+    const mask = masks.get(event.window) ?? [];
+    const repeatedPhase = mask.some(item => item.melodic && item.phase === event.phaseTick);
+    const sameFraction = melody.filter(other => other.window === event.window && other.phaseTick % 4 === event.phaseTick % 4);
+    if (!repeatedPhase && new Set(sameFraction.map(other => other.index)).size < 3) continue;
+    event.primary = true;
+    event.signature = `melody:${mask.filter(item => item.melodic).map(item => item.phase).sort((a,b)=>a-b).join(',')}`;
+    event.impact = false;
+    events.push(event);
   }
-  const phaseCounts = new Map();
-  for (const attacks of bars.values()) {
-    for (const phase of new Set(attacks.map((e) => Math.round(e.phase * 24))))
-      phaseCounts.set(phase, (phaseCounts.get(phase) ?? 0) + 1);
+  const activePulses = pulse.pulses.map(({ time, index }) => ({ time, index, beat: context.beatAt(time) }))
+    .filter(event => event.beat >= context.startBeat && event.beat <= context.endBeat && Math.max(context.energyAt(event.time), context.energyAt(event.time + .05)) >= .035);
+  const windowEnergy = new Map();
+  for (const window of new Set(events.map(event => event.window))) {
+    const items = events.filter(event => event.window === window);
+    windowEnergy.set(window, items.reduce((sum, event) => sum + event.energy, 0) / items.length);
   }
-  for (const attacks of bars.values()) {
-    const average =
-      attacks.reduce((sum, event) => sum + event.strength, 0) / attacks.length;
-    const peak = Math.max(...attacks.map((event) => event.strength));
-    for (const event of attacks) {
-      const phase = Math.round(event.phase * 24);
-      const repeated = (phaseCounts.get(phase) ?? 1) / Math.max(1, bars.size);
-      const role =
-        event.kind === "kick"
-          ? 0.15
-          : event.kind === "snare"
-            ? 0.12
-            : event.kind === "high"
-              ? 0
-              : 0.04;
-      // Strongly recurring syncopations receive the same musical treatment as
-      // integer beats. Grid position never creates a missing attack.
-      event.salience =
-        event.strength * 0.62 +
-        event.confidence * 0.18 +
-        role +
-        repeated * 0.14;
-      event.slot = Math.round(event.phase * 4);
-      event.impact =
-        event.strength >= peak * 0.92 && event.strength > average * 1.16;
+  return { events: events.sort((a,b)=>a.time-b.time), pulse, masks, activePulses, windowEnergy,
+    mode: 'percussion-groove', percussionSource: isolatedDrums ? 'isolated-drums' : 'hpss', regimes, synthetic: false,
+    signatures: new Set(events.map(event => event.signature)).size };
+}
+
+function buildRhythm(context) {
+  const pulse = buildPulse(context);
+  if (context.percussionEvents !== null) return buildPercussionRhythm(context, pulse);
+  const { pulses } = pulse;
+  const windows = new Map();
+  const candidates = [];
+  const percussion = context.onsets.filter(event => {
+    const kind = event.kind ?? (event.low > .55 ? 'kick' : event.high > .45 ? 'high' : 'mid');
+    return ['kick', 'snare', 'high'].includes(kind) && finite(event.confidence, .8) >= .35 && event.strength >= .12;
+  });
+  const positionAt = time => {
+    let lo = 0, hi = pulses.length - 1;
+    while (lo <= hi) { const mid = (lo + hi) >>> 1; if (pulses[mid].time <= time) lo = mid + 1; else hi = mid - 1; }
+    if (hi < 0 || hi >= pulses.length - 1) return null;
+    return hi + (time - pulses[hi].time) / (pulses[hi + 1].time - pulses[hi].time);
+  };
+  for (const event of percussion) {
+    const position = positionAt(event.time);
+    if (position === null) continue;
+    const tick = Math.round(position * 4);
+    // Only recurring 1/2- and 1/4-pulse percussion can add subdivisions.
+    // Vocal syllables and attacks far from the pulse never become hit clocks.
+    if (tick % 4 === 0 || Math.abs(position - tick / 4) > .085) continue;
+    const window = Math.floor(tick / 64);
+    const phase = ((tick % 16) + 16) % 16;
+    if (!windows.has(window)) windows.set(window, new Map());
+    const phases = windows.get(window);
+    if (!phases.has(phase)) phases.set(phase, { phase, bars: new Set(), strength: 0, count: 0, events: new Map() });
+    const item = phases.get(phase);
+    const bar = Math.floor(tick / 16);
+    item.bars.add(bar); item.strength += event.strength; item.count++;
+    const previous = item.events.get(bar);
+    if (!previous || previous.strength < event.strength) item.events.set(bar, event);
+  }
+  const globalPhaseCounts = new Map();
+  for (const phases of windows.values()) for (const item of phases.values()) globalPhaseCounts.set(item.phase, (globalPhaseCounts.get(item.phase) ?? 0) + item.bars.size);
+  const masks = new Map();
+  for (const [window, phases] of windows) {
+    const supported = [...phases.values()].filter(item => item.bars.size >= 3)
+      .map(item => ({ ...item, score: (globalPhaseCounts.get(item.phase) ?? 0) + item.strength / item.count + (item.phase % 2 === 0 ? .15 : 0) }))
+      .sort((a, b) => b.score - a.score || a.phase - b.phase);
+    masks.set(window, supported);
+  }
+  const activePulses = [];
+  for (let index = 0; index < pulses.length; index++) {
+    const { time } = pulses[index];
+    const beat = context.beatAt(time);
+    const energy = Math.max(context.energyAt(time), context.energyAt(time + .05));
+    if (beat < context.startBeat || beat > context.endBeat || energy < .035) continue;
+    const bar = Math.floor(index / 4);
+    const window = Math.floor(index / 16);
+    const near = percussion.filter(event => Math.abs(event.time - time) <= pulse.period * .13)
+      .sort((a, b) => b.strength - a.strength)[0];
+    const kind = near?.kind ?? (near?.low > .55 ? 'kick' : 'pulse');
+    const signature = `pulse:${(masks.get(window) ?? []).map(item => item.phase).sort((a, b) => a - b).join(',')}`;
+    const anchor = { time, beat, energy, kind, strength: near?.strength ?? .5, confidence: 1,
+      index, bar, window, phase: index % 4, slot: index % 8, signature,
+      isPulse: true, impact: index % 4 === 0 && ['kick', 'snare'].includes(kind) && near.strength > .45 };
+    candidates.push(anchor); activePulses.push(anchor);
+    const next = pulses[index + 1];
+    if (!next) continue;
+    for (const fraction of [.25, .5, .75]) {
+      const phase = (index % 4) * 4 + fraction * 4;
+      const evidence = (masks.get(window) ?? []).find(item => item.phase === phase);
+      const event = evidence?.events.get(bar);
+      if (!event) continue;
+      const subdivisionTime = time + fraction * (next.time - time);
+      const subdivisionBeat = context.beatAt(subdivisionTime);
+      if (subdivisionBeat > context.endBeat) continue;
+      candidates.push({ ...anchor, time: subdivisionTime, beat: subdivisionBeat,
+        kind: event.kind ?? 'high', strength: event.strength, confidence: finite(event.confidence, .8),
+        phase: (index % 4) + fraction, isPulse: false, impact: false, fraction,
+        recurringSupport: evidence.bars.size, evidencePhase: phase });
     }
   }
-  // Group related rhythms by their stronger percussion skeleton, so a vocal
-  // ornament or small attack jitter does not abruptly replace the movement.
-  const families = [];
-  for (const attacks of bars.values()) {
-    const percussion = attacks.filter(
-      (e) => e.kind === "kick" || e.kind === "snare",
-    );
-    const skeleton = (percussion.length >= 2 ? percussion : attacks)
-      .slice()
-      .sort((a, b) => b.salience - a.salience)
-      .slice(0, 6);
-    const phases = [
-      ...new Set(skeleton.map((e) => Math.round(e.phase * 8) % 32)),
-    ].sort((a, b) => a - b);
-    let family;
-    for (const candidate of families) {
-      const remaining = [...candidate.phases];
-      let matched = 0;
-      for (const phase of phases) {
-        const index = remaining.findIndex(
-          (other) =>
-            Math.min(Math.abs(other - phase), 32 - Math.abs(other - phase)) <=
-            1,
-        );
-        if (index >= 0) {
-          matched++;
-          remaining.splice(index, 1);
-        }
-      }
-      if (matched / Math.max(phases.length, candidate.phases.length) >= 0.66) {
-        family = candidate;
-        break;
-      }
-    }
-    if (!family) {
-      family = { phases, signature: phases.join(",") };
-      families.push(family);
-    }
-    for (const event of attacks) event.signature = family.signature;
+  const windowEnergy = new Map();
+  for (const window of new Set(activePulses.map(event => event.window))) {
+    const selected = activePulses.filter(event => event.window === window);
+    windowEnergy.set(window, selected.reduce((sum, event) => sum + event.energy, 0) / selected.length);
   }
-  return { bars, events, synthetic, signatures: families.length };
+  return { events: candidates.sort((a, b) => a.time - b.time), pulse, masks, activePulses, windowEnergy,
+    mode: 'pulse-fallback', synthetic: pulse.synthetic, signatures: new Set([...masks.values()].map(mask => mask.map(item => item.phase).join(','))).size };
+}
+
+function selectGroovePhases(core, budget) {
+  if (core.length <= budget) return core;
+  const selected = [];
+  // The two slow-difficulty anchors should span the bar, not form an
+  // adjacent pair merely because those two transients are marginally louder.
+  const first = [...core].sort((a,b) => Math.min(a.phase,16-a.phase) - Math.min(b.phase,16-b.phase) || b.score-a.score)[0];
+  if (first) selected.push(first);
+  while (selected.length < budget) {
+    const remaining = core.filter(item => !selected.includes(item));
+    remaining.sort((a,b) => {
+      const distance = item => Math.min(...selected.map(other => Math.min(Math.abs(item.phase-other.phase),16-Math.abs(item.phase-other.phase))));
+      return distance(b)-distance(a) || b.score-a.score || a.phase-b.phase;
+    });
+    if (!remaining.length) break;
+    selected.push(remaining[0]);
+  }
+  return selected;
 }
 
 function chooseRhythm(context, rhythm, profile, level, density) {
+  const strideFor = () => {
+    let stride = level === 0 ? (density < .3 ? 4 : 2) : level === 1 && density < .3 ? 2 : 1;
+    while (stride * rhythm.pulse.period < Math.max(profile.gap, profile.handGap / 2)) stride *= 2;
+    return stride;
+  };
+  const stride = strideFor();
   const output = [];
-  const quotas = [2, 3.25, 5, 7, 10];
-  const gap = Math.max(profile.gap, profile.handGap / 2);
-  for (const attacks of rhythm.bars.values()) {
-    const energy =
-      attacks.reduce((sum, event) => sum + event.energy, 0) / attacks.length;
-    const budget = Math.max(
-      1,
-      Math.round(
-        quotas[level] * (0.55 + density * 0.7) * (0.65 + energy * 0.5),
-      ),
-    );
-    const selected = [];
-    const ranked = [...attacks].sort(
-      (a, b) => b.salience - a.salience || a.time - b.time,
-    );
-    for (const event of ranked) {
-      if (selected.length >= budget) break;
-      if (
-        selected.some((other) => Math.abs(other.time - event.time) < gap - 1e-6)
-      )
-        continue;
-      selected.push(event);
+  if (rhythm.mode === 'percussion-groove') {
+    const selectedCore = new Map();
+    const coreBudget = level === 0 ? (density < .3 ? 1 : 2) : level === 1 ? (density < .3 ? 2 : 4) : level === 2 && density < .3 ? 4 : Infinity;
+    for (const event of rhythm.events) {
+      const key = `${event.window}:${event.melodic}`;
+      if (!selectedCore.has(key)) {
+        const mask = rhythm.masks.get(event.window) ?? [];
+        const core = mask.filter(item => event.melodic ? item.melodic : item.primary);
+        selectedCore.set(key, selectGroovePhases(core, coreBudget));
+      }
+      const core = selectedCore.get(key);
+      if (event.primary) {
+        if (event.melodic && !core.length) {
+          if (level >= 2 || event.index % (level === 0 ? 2 : 1) === 0) output.push(event);
+        } else if (core.some(item => item.phase === event.phaseTick)) output.push(event);
+      } else if (event.hat && level >= 3 && density > .25) output.push(event);
+      else if (event.fill && level === 4 && density > .5) output.push(event);
     }
-    output.push(...selected);
+    return output.sort((a,b)=>a.time-b.time);
+  }
+  for (const event of rhythm.events) {
+    if (event.isPulse) {
+      if (event.index % stride !== 0) continue;
+      output.push({ ...event, signature: level < 2 ? `backbone:${stride}` : event.signature });
+      continue;
+    }
+    if (level < 2) continue;
+    const masks = rhythm.masks.get(event.window) ?? [];
+    const maximum = [0, 0, 2, 4, 8][level];
+    const budget = Math.round(maximum * density * (.45 + (rhythm.windowEnergy.get(event.window) ?? event.energy) * .75));
+    if (masks.slice(0, budget).some(item => item.phase === event.evidencePhase)) output.push(event);
   }
   return output.sort((a, b) => a.time - b.time);
+}
+
+/** For lightshow synchronization. Times are pulse anchors/interpolated,
+ * recurring percussion subdivisions, not arbitrary broadband attack peaks. */
+export function getRhythmAnchors(analysis) {
+  const context = normalizeAnalysis(analysis);
+  return buildRhythm(context).events.map(event => ({ time: event.time, beat: event.beat,
+    kind: event.kind, strength: event.strength, isPulse: event.isPulse, phase: event.phase }));
 }
 
 function makeNotes(context, rhythm, profile, level, controls, walls) {
@@ -431,7 +582,20 @@ function makeNotes(context, rhythm, profile, level, controls, walls) {
     { time: -Infinity, direction: undefined, hits: 0 },
   ];
   const { seed, density, intensity, style } = controls;
-  const selected = chooseRhythm(context, rhythm, profile, level, density);
+  const proposed = chooseRhythm(context, rhythm, profile, level, density);
+  const admissible = rhythm.mode === 'percussion-groove' ? [] : proposed;
+  if (rhythm.mode === 'percussion-groove') {
+    const ranked = [...proposed].sort((a,b) => Number(b.primary)-Number(a.primary) || b.strength*b.confidence-a.strength*a.confidence || a.time-b.time);
+    for (const event of ranked) if (!admissible.some(other => Math.abs(other.time-event.time) < profile.gap-1e-6)) admissible.push(event);
+    admissible.sort((a,b)=>a.time-b.time);
+  }
+  const selected = admissible.filter((event, index) => {
+    if (rhythm.mode === 'percussion-groove' || event.isPulse) return true;
+    const previousPulse = rhythm.activePulses.findLast(pulse => pulse.time < event.time);
+    const nextPulse = rhythm.activePulses.find(pulse => pulse.time > event.time);
+    const clearance = Math.max(profile.gap, profile.handGap / 2);
+    return (!previousPulse || event.time - previousPulse.time >= clearance) && (!nextPulse || nextPulse.time - event.time >= clearance);
+  });
   const lanePhrases = [
     [1, 1, 0, 0, 1, 1, 0, 0],
     [0, 0, 1, 1, 0, 0, 1, 1],
@@ -510,7 +674,10 @@ function makeNotes(context, rhythm, profile, level, controls, walls) {
         intensity > 0.35;
       const sign = down ? (color === 0 ? -1 : 1) : color === 0 ? 1 : -1;
       const direction = chooseDirection(state.direction, down, diagonal, sign);
-      notes.push({ beat, x, y, color, direction });
+      notes.push({ beat, x, y, color, direction,
+        musicalRole: event.melodic ? 'melodic' : event.kind,
+        sourceTime: event.time,
+        timingRole: rhythm.mode === 'percussion-groove' ? event.primary ? 'groove' : event.hat ? 'high' : 'fill' : event.isPulse ? 'pulse' : 'subdivision' });
       state.direction = direction;
       state.time = time;
       state.hits++;
@@ -676,6 +843,7 @@ export function generateMaps(
     lights,
   };
   const rhythm = buildRhythm(context);
+  context.wallPulses = rhythm.mode === 'percussion-groove' ? rhythm.events.filter(event => event.primary) : rhythm.activePulses;
   const maps = {};
   for (const [level, difficulty] of DIFFICULTIES.entries()) {
     const profile = PROFILES[difficulty];
@@ -703,9 +871,9 @@ export function generateMaps(
       duration: context.duration,
       difficulty,
       generation: {
-        version: 2,
-        timingSource: rhythm.synthetic ? "synthetic-grid" : "acoustic-attacks",
-        acousticEvents: rhythm.synthetic ? 0 : rhythm.events.length,
+        version: 3,
+        timingSource: `${rhythm.pulse.source}-pulse${rhythm.pulse.smoothed ? "-fit" : ""}`,
+        acousticEvents: context.onsets.length,
         rhythmicSignatures: rhythm.signatures,
         seed,
         density: controls.density,
@@ -714,6 +882,32 @@ export function generateMaps(
         minHandIntervalSeconds: profile.handGap,
         minNoteIntervalSeconds: profile.gap,
       },
+    };
+    const uniqueBeats = [...new Set(notes.map(note => note.beat))];
+    const matches = event => uniqueBeats.some(beat => Math.abs(beat - event.beat) < .001);
+    const plannedRhythm = chooseRhythm(context, rhythm, profile, level, controls.density);
+    const expected = plannedRhythm.filter(event => rhythm.mode === 'percussion-groove' ? event.primary : event.isPulse);
+    const coveredPulses = rhythm.activePulses.filter(event => uniqueBeats.some(beat => Math.abs((beat - event.beat) * 60 / context.bpm) < .035)).length;
+    const coveredBackbone = expected.filter(matches).length;
+    map.rhythmDiagnostics = {
+      mode: rhythm.mode,
+      percussionSource: rhythm.percussionSource ?? null,
+      primaryGrooveCount: rhythm.events.filter(event => event.primary && !event.melodic).length,
+      melodicBackboneCount: rhythm.events.filter(event => event.primary && event.melodic).length,
+      drumWindows: rhythm.regimes ? [...rhythm.regimes].filter(([, active]) => active).map(([window]) => window) : [],
+      source: rhythm.pulse.source,
+      pulseSmoothed: rhythm.pulse.smoothed,
+      pulsePeriod: round(rhythm.pulse.period),
+      pulseCount: rhythm.activePulses.length,
+      coveredPulses,
+      pulseCoverage: rhythm.activePulses.length ? round(coveredPulses / rhythm.activePulses.length) : 0,
+      expectedBackboneCount: expected.length,
+      backboneCoverage: expected.length ? round(coveredBackbone / expected.length) : 0,
+      subdivisionCount: uniqueBeats.length - coveredPulses,
+      patternWindows: [...rhythm.masks].map(([window, mask]) => {
+        const chosen = plannedRhythm.filter(event => event.window === window);
+        return { window, phases: [...new Set(chosen.map(event => event.phase))].sort((a,b)=>a-b) };
+      }),
     };
     map.validation = validateGameplay(map);
     maps[difficulty] = map;

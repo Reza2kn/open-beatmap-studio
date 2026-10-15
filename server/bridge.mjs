@@ -15,6 +15,23 @@ const localDownloader = join(
 const downloader =
   process.env.BEATMAP_YTDLP ||
   (existsSync(localDownloader) ? localDownloader : "yt-dlp");
+export function runBeatModel(audio, signal) {
+  const python = process.env.BEATMAP_MODEL_PYTHON || join(process.cwd(), ".model-venv", process.platform === "win32" ? "Scripts/python.exe" : "bin/python");
+  return new Promise((resolve, reject) => {
+    const p = spawn(python, ["server/beat-model.py", "--stdin-f32", "--sample-rate", "22050", "--separate-drums"], { signal, stdio: ["pipe", "pipe", "pipe"] });
+    let output = "", error = "";
+    p.stdout.on("data", d => { output += d; if (output.length > 4e6) p.kill(); });
+    p.stderr.on("data", d => { error = (error + d).slice(-2000); });
+    p.stdin.on("error", () => {});
+    p.on("error", e => reject(new Error(e.code === "ENOENT" ? "Learned beat tracker is not installed. Run npm run model:setup, then restart the companion." : e.message)));
+    p.on("close", code => {
+      if (code !== 0) { console.error("Beat model:", error || output.slice(-2000)); return reject(new Error("Local beat inference failed. Check the companion terminal or run npm run model:setup.")); }
+      try { const result = JSON.parse(output); if (result.error) throw new Error(result.error); resolve(result); }
+      catch { reject(new Error("Local beat tracker returned an invalid result.")); }
+    });
+    p.stdin.end(audio);
+  });
+}
 export function youtubeUrl(input) {
   const u = new URL(input);
   if (u.protocol !== "https:" || u.username || u.password || u.port)
@@ -68,6 +85,7 @@ function run(command, args, signal) {
 export function createBridge({
   token = randomBytes(24).toString("hex"),
   allowedOrigin = "https://open-beatmap-studio.frostymoose128.chatgpt.site",
+  analyze = runBeatModel,
 } = {}) {
   let active = false;
   const server = http.createServer(async (req, res) => {
@@ -108,6 +126,22 @@ export function createBridge({
     }
     if (req.method === "GET" && req.url === "/health") {
       json(200, { ready: true, local: true });
+      return;
+    }
+    if (req.method === "POST" && req.url === "/analyze") {
+      if (active) { json(409, { error: "The companion is busy. Wait for the current operation." }); return; }
+      active = true;
+      const controller = new AbortController(), timer = setTimeout(() => controller.abort(), 900000);
+      res.on("close", () => { if (!res.writableEnded) controller.abort(); });
+      try {
+        if (req.headers["content-type"] !== "application/octet-stream") throw new Error("Send mono 22050 Hz float32 PCM.");
+        const chunks = []; let size = 0;
+        for await (const chunk of req) { size += chunk.length; if (size > 600 * 22050 * 4) throw new Error("Audio exceeds 10 minutes."); chunks.push(chunk); }
+        if (size < 5 * 22050 * 4 || size % 4) throw new Error("Audio must contain at least five seconds of mono float32 samples.");
+        const result = await analyze(Buffer.concat(chunks), controller.signal);
+        json(200, result);
+      } catch (e) { if (!res.headersSent) json(400, { error: e.name === "AbortError" ? "Local beat inference timed out." : e.message }); }
+      finally { clearTimeout(timer); active = false; }
       return;
     }
     if (req.method !== "POST" || req.url !== "/import") {
@@ -209,8 +243,8 @@ if (
 ) {
   const { server, token } = createBridge();
   server.listen(4174, "127.0.0.1", () => {
-    console.log("Open Beatmap local YouTube bridge: http://127.0.0.1:4174");
-    console.log("Temporary bridge key (paste into the studio YouTube tab):");
+    console.log("Open Beatmap local companion: http://127.0.0.1:4174");
+    console.log("Temporary companion key (paste into Beat tracker or YouTube):");
     console.log(token);
     console.log(
       "Requires yt-dlp and ffmpeg. Keep this terminal open. Ctrl+C stops the bridge.",

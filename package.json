@@ -1,6 +1,6 @@
 {
   "name": "open-beatmap-studio",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "private": true,
   "type": "module",
   "description": "Browser-first open source Beat Saber map generator",
@@ -10,7 +10,8 @@
     "preview": "vite preview --host 127.0.0.1",
     "test": "node --test tests/*.test.js",
     "bridge": "node server/bridge.mjs",
-    "bridge:setup": "node server/setup-bridge.mjs"
+    "bridge:setup": "node server/setup-bridge.mjs",
+    "model:setup": "node server/setup-model.mjs"
   },
   "dependencies": {
     "@fontsource/dm-sans": "^5.2.8",

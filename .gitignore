@@ -7,3 +7,9 @@ coverage/
 .venv/
 
 .local-tests/
+
+.model-venv/
+.model-cache/
+
+__pycache__/
+*.pyc

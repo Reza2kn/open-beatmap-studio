@@ -222,7 +222,7 @@ export class Transport {
       ? Math.min(
           this.buffer.duration,
           Math.max(
-            0,
+            this.position,
             this.position +
               (audibleContextTime(this.context) - this.started) * this.rate,
           ),

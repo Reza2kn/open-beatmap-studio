@@ -1,6 +1,6 @@
 # Browser audio analysis and local-model path
 
-Research checked 2026-10-15 against primary project documentation. The shipping analyzer is deterministic DSP. It makes no inference calls, downloads no weights, and sends no user audio to a service. Neural models below are a proposed upgrade; they are not integrated or benchmarked here.
+Research checked 2026-10-15 against primary project documentation. This document describes the browser DSP component: it makes no inference calls, downloads no weights, and sends no audio to a service. A local CPU Beat This! service is now implemented separately; see [local model setup and API](local-model.md). Browser-only ONNX inference remains future work.
 
 ## Implemented signal path
 
@@ -30,7 +30,7 @@ Limitations: sustained vocals, rubato, syncopation, tempo changes, long intros, 
 
 ## A credible tiny local model
 
-**Beat This! small0** is an unusually good candidate: the authors provide beat and downbeat inference and list their smaller checkpoints at about **8.1 MB**, compared with 78 MB for the main model. The official implementation requires PyTorch and related Python dependencies; CPU inference is supported. Its present interface is Python, not a ready-to-run browser package. [Official model repository](https://github.com/CPJKU/beat_this). Repository code is MIT licensed. [License](https://github.com/CPJKU/beat_this/blob/main/LICENSE).
+**Beat This! small0** is now available through the local CPU service: the authors provide beat and downbeat inference and list their smaller checkpoints at about **8.1 MB**, compared with 78 MB for the main model. The official implementation requires PyTorch and related Python dependencies; CPU inference is supported. Its present interface is Python, not a ready-to-run browser package. [Official model repository](https://github.com/CPJKU/beat_this). Repository code is MIT licensed. [License](https://github.com/CPJKU/beat_this/blob/main/LICENSE).
 
 Proposed implementation: export the smaller network to ONNX, replicate and validate the exact audio/spectrogram preprocessing, use quantization only after beat/downbeat timing regression tests, run overlapping chunks in a worker, and compare against the official Python outputs. ONNX Runtime Web offers WASM and accelerated providers; WASM covers all ONNX operators while GPU providers support subsets. Therefore an ONNX export and operator/runtime validation are necessary before promising browser compatibility. Prefer WASM as the baseline and WebGPU where validated. [ONNX Runtime Web](https://onnxruntime.ai/docs/tutorials/web/), [WebGPU guidance](https://onnxruntime.ai/docs/tutorials/web/ep-webgpu.html).
 

@@ -1,11 +1,16 @@
 import { defineConfig } from "vite";
 export default defineConfig({
+  // Discover the worker codec before users import audio: lazy optimization
+  // otherwise reloads the development page during its first ZIP export.
+  optimizeDeps: { include: ["wasm-media-encoders"] },
   server: {
     host: "127.0.0.1",
     watch: {
       ignored: [
         "**/.local-tests/**",
         "**/.venv/**",
+        "**/.model-venv/**",
+        "**/.model-cache/**",
         "**/.openai/**",
         "**/docs/**",
         "**/tests/**",

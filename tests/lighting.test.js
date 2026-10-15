@@ -205,3 +205,15 @@ test("input timing is validated", () => {
   assert.throws(() => generateLightshow({ duration: 0, bpm: 120 }), /duration/);
   assert.throws(() => generateLightshow({ duration: 30, bpm: NaN }), /BPM/);
 });
+
+test("arranged kick and syncopated snare keep their distinct light accents", () => {
+  const analysis = song({ offset: 0, bpm: 120, duration: 12 });
+  analysis.beatTimes = Array.from({length:24},(_,i)=>i*.5);
+  analysis.lightRhythmEvents = [
+    {time:2.375,strength:1,kind:'snare',mid:.9,low:.05,high:.05},
+    {time:2.5,strength:1,kind:'kick',low:.9,mid:.05,high:.05},
+  ];
+  const cues=generateLightshow(analysis).previewCues;
+  assert.ok(cues.some(c=>Math.abs(c.time-2.375)<.002));
+  assert.ok(cues.some(c=>Math.abs(c.time-2.5)<.002));
+});

@@ -1,0 +1,8 @@
+# CPU runtime; no CUDA packages or paid inference services.
+beat-this==1.1.0
+torch==2.8.0
+torchaudio==2.8.0
+soundfile==0.13.1
+soxr==1.0.0
+demucs==4.0.1
+scipy>=1.13,<2

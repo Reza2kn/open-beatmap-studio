@@ -72,7 +72,7 @@ function features(analysis) {
   const sections = (analysis.sections ?? [])
     .filter((s) => Number.isFinite(s.start) && Number.isFinite(s.end))
     .sort((a, b) => a.start - b.start);
-  const onsets = (analysis.onsets ?? [])
+  const onsets = (analysis.lightRhythmEvents ?? analysis.onsets ?? [])
     .map((o) =>
       typeof o === "number"
         ? { time: o, strength: 0.6, low: 0.34, mid: 0.33, high: 0.33 }
@@ -168,7 +168,10 @@ export function generateLightshow(
   // Candidate cue times merge beat anchors with actual acoustic accents. Lighting
   // may follow a syncopation even when note difficulty omits that subdivision.
   const candidates = [{ time: 0, anchor: true }];
-  for (let beat = Math.ceil(beatAt(0)); timeAt(beat) < duration - 0.08; beat++)
+  const anchors = analysis.modelBeatTimes ?? analysis.beatTimes;
+  if (Array.isArray(anchors) && anchors.length) {
+    for (const time of anchors) if (time >= 0 && time < duration - 0.08) candidates.push({ time, anchor: true });
+  } else for (let beat = Math.ceil(beatAt(0)); timeAt(beat) < duration - 0.08; beat++)
     candidates.push({ time: Math.max(0, timeAt(beat)), anchor: true });
   for (const onset of ctx.onsets)
     if (finite(onset.strength, 0.6) >= 0.15)
@@ -178,9 +181,10 @@ export function generateLightshow(
       candidates.push({ time: section.start, anchor: true, boundary: true });
   candidates.sort((a, b) => a.time - b.time);
   const pulses = [];
+  const minimumCueSpacing = Array.isArray(analysis.lightRhythmEvents) ? 0.12 : 0.22;
   for (const candidate of candidates) {
     const last = pulses.at(-1);
-    if (last && candidate.time - last.time < 0.22) {
+    if (last && candidate.time - last.time < minimumCueSpacing) {
       // Only merge coincident evidence; densely spaced later accents are
       // thinned instead of dragging a cue forward through a whole crescendo.
       if (
@@ -189,6 +193,7 @@ export function generateLightshow(
         finite(candidate.onset.strength) > finite(last.onset?.strength, -1)
       ) {
         last.onset = candidate.onset;
+        if (finite(candidate.onset.strength) > 0.55) last.time = candidate.onset.time;
       }
       if (candidate.time - last.time < 0.07) {
         last.anchor ||= candidate.anchor;

@@ -34,7 +34,7 @@ A live HTTP bridge import of Blender's [Sintel trailer](https://www.youtube.com/
 - Representative real music evaluation, variable-tempo alignment and expert mapper feedback. Current BPM/phrase/drop labels are heuristics.
 - Hosted-page-to-loopback YouTube import can depend on browser mixed-content/local-network policy. The localhost studio is the reliable intended bridge configuration.
 
-## Rhythm repair after real user feedback, 2026-10-15
+## First rhythm revision, later rejected by the user, 2026-10-15
 
 The initial release's passing structural tests did not establish musical quality. The user's supplied “512” recording is now the local regression fixture; its SHA-256 is checked locally so the test cannot silently substitute another recording. The source repository contains no recording or beat-reference asset. `tests/real-audio.test.js` reads the ignored local fixture configuration or `BEATMAP_TEST_AUDIO`; clean public CI explicitly skips that private-file test.
 
@@ -49,3 +49,24 @@ Preview timing now follows the speaker-output clock where available, falling bac
 Remaining acceptance is listening and gameplay judgment across varied music and actual headsets. Exact timestamp preservation, static checks and model agreement do not certify aesthetic quality or VR comfort.
 
 The corrected source passes **59 local tests**, including the private recording regression. Public CI runs the same suite with the explicitly unavailable private-song case skipped. The source build passes. The reference model's temporary Python environment was removed after verification; its local beat estimates, provenance and aggregate diagnostics are retained.
+
+
+## Drum-first replacement after second rejection, 2026-10-15
+
+The user rejected v0.2 throughout the song. The earlier 8 ms model-agreement figure described the **estimated regular beat grid**, not the generated note sequence. Exact alignment to the application's own onset detections was circular evidence for musical quality and did not justify calling the map rhythm repaired.
+
+A separate audit found no sustained export-audio timing offset: cross-correlated four-second windows at 8/60/140/188 seconds differed from the original recording by approximately 0/0/4/0 ms. The old Easy map covered only about 47% of independent model quarter-beat positions over 12–156 seconds; its 51 main-body bars contained 13 distinct rhythm masks and adjacent-bar Jaccard agreement of 0.369. This supports an arrangement/selection failure even when most selected attacks lie near a sixteenth-note subdivision.
+
+The replacement uses pulse positions as a timing reference and selects recurring kick/snare attacks as its primary groove. Drumless passages use rhythmic melodic attacks. Easier difficulties use stable subsets; isolated weak events do not become filler notes. Native lighting accents use the same arranged rhythm. The optional local companion now supplies both learned Beat This! timing and a Demucs drum stem to the production mapping pipeline; it is not merely a test reference. Downbeats and model probabilities remain estimates, and inconsistent meter is reported rather than asserted.
+
+Full-song evidence and final test outcomes are recorded below after validation. Neither pulse coverage nor model agreement establishes expert choreography or subjective musical quality; human listening and headset playtesting remain required.
+
+Browser HPSS was checked against attacks extracted from an independently learned htdemucs stem of the exact recording. Over 22–188 seconds, drum-role note agreement within 50 ms was 100% / 98.9% / 94.7% / 93.4% / 93.0% from Easy through Expert+. Coverage of the louder half of independent stem attacks was 37.1% / 76.4% / 90.3% / 90.7% / 98.7%. The thresholds describe this regression recording and are not a general accuracy benchmark. Melodic-role notes in drumless sections are evaluated separately rather than incorrectly counted as false drum hits.
+
+The first independently separated main kick is at about 22.070 seconds. Its groove follows pulse phases 0, .75, 1, 1.5, 2, 2.75, 3, 3.5. Before that drum entry, the new mapper uses rhythmic melodic attacks. The local neural production option isolates an actual htdemucs drum stem before detecting those physical attacks; browser-only HPSS remains a faster approximate alternative. Learned separation and beat tracking run locally, and no song/stem/checkpoint is published with the site.
+
+The production mono-PCM neural path completed the full recording with 476 isolated-stem attacks, none before 22 seconds. Its attack sequence agreed within 40 ms with 97.9% of events from the earlier independent stereo-input separation, covering 98.1% of that stereo reference. These are two input paths through the same separator, not an independently labeled recognition benchmark. The standalone warmed CPU run took 90.7 seconds; concurrent browser runs can take longer. The Node suite passes 73 tests, including the private real-song checks; six Python model-helper tests also pass. The production frontend builds successfully.
+
+Final browser QA also exposed a development-only encoder dependency optimization reload that discarded the uploaded track on first export. The codec is now explicitly prebundled for development; final export acceptance uses the built production frontend, where dependency optimization/HMR is absent.
+
+Production-browser end-to-end acceptance passed on the supplied MP3: local neural separation/tracking, piano-intro and drum-entry playback/seeking, native rhythm lighting, worker encoding and ZIP download. The downloaded export contains 123/245/495/532/580 notes across five difficulties, and 4,536 color plus 1,168 rotation groups per difficulty. Reopened ZIP validation reports zero errors/warnings; FFprobe confirms real stereo 48 kHz Vorbis and 195.860-second duration. The user's audio and generated maps remain local. This establishes the implemented signal/export path; subjective musicality and in-headset acceptance remain unverified.
