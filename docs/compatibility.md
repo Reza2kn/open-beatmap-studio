@@ -1,0 +1,37 @@
+# Beat Saber export profile
+
+Research checked 2026-10-15. This describes the implementation and documentary evidence; it is not a claim of headset testing.
+
+## Files and schema
+
+The ZIP contains root-level `Info.dat` (2.0.0), `Easy.dat`, `Normal.dat`, `Hard.dat`, `Expert.dat`, `ExpertPlus.dat` (each 3.0.0), `song.ogg`, and a PNG/JPEG cover. It uses Standard characteristic and difficulty ranks 1/3/5/7/9. Native lightshows select `WeaveEnvironment`; exports without a native lightshow use `DefaultEnvironment`. The [BSMG Info specification](https://bsmg.wiki/mapping/map-format/info.html) documents these metadata fields, difficulty references and ranks. Cover art defaults to a square 256 px PNG. Ogg is recommended for custom map distribution.
+
+The [BSMG format overview](https://bsmg.wiki/mapping/map-format.html) describes the game's legacy schema compatibility and dates v3 to game version 1.20.0. We choose v3 gameplay to express wall height/vertical placement directly while retaining familiar v2 song metadata. This export intentionally avoids v4's separate audio/lightshow schemas. Legacy schemas remain supported according to that documentation, but future fixes and features are not guaranteed.
+
+Notes use v3 `{b,x,y,c,d,a}`; bombs `{b,x,y}`; walls `{b,x,y,w,h,d}`. Grid columns are 0–3, note rows 0–2, colors 0/1, and directions 0–8. Full walls use `y=0,h=5`; crouch walls use `y=2,h=3`. See the [BSMG beatmap specification](https://bsmg.wiki/mapping/map-format/beatmap.html).
+
+Lighting lives inside every difficulty. Native choreography uses `lightColorEventBoxGroups`, `lightRotationEventBoxGroups` and `colorBoostBeatmapEvents`. Weave's authored corner symmetry, individual-light index filters, beat distributions, brightness/color transitions and eased rotation provide synchronized traveling waves and laser fans. The [official Beat Saber group-lighting guide](https://beatsaber.com/documentation/the-group-lighting-event-system/index.html) describes this native group system. The [official environment guide](https://beatsaber.com/documentation/environment-specific-lighting-attributes-and-explanations/index.html) confirms Weave supports group lighting and explains its mirrored square organization.
+
+The verified Weave group contract is IDs **0–15**, with **8 lights each except groups 12 and 13, which have 12**. Every group supports color and rotation on X/Y axes; no group supports Z rotation or translation. These exact properties come from the maintained [bsmap environment definitions](https://github.com/KivalEvan/BeatSaber-JSMap/blob/main/src/beatmap/misc/environment.ts#L496). Weave's symmetry and 8/12-light counts are also corroborated by the official guide. No translation events are emitted merely to increase event counts: Weave cannot execute them. Native color/rotation/boost work with schema 3.0.0; 3.2.0 is unnecessary for this environment.
+
+Basic events `{b,et,i,f}` remain available for environmental accents. Event types 0–4 address legacy light groups; 8/9 and 12/13 control legacy environment motion where supported. Light actions 0–12 cover off/static/flash/fade/transition. See the [BSMG lightshow specification](https://bsmg.wiki/mapping/map-format/lightshow.html). With native groups, `useNormalEventsAsCompatibleEvents=false` follows the official editor's default: overriding the map to a different environment disables its lighting because group assignments are environment-specific. Play with the intended Weave environment to see the authored show. No Chroma, Noodle Extensions, or Mapping Extensions requirement is introduced.
+
+`Info.dat._songTimeOffset` is always zero. The Info specification warns this field has unstable behavior; the exporter adds the supplied grid offset in seconds to every note/bomb/wall/light beat instead. Timing convention: `audioTimeSeconds = beat * 60 / bpm + offset`. Wall durations are unchanged.
+
+## PC and Quest
+
+PC users extract the ZIP into a song folder under `Beat Saber/Beat Saber_Data/CustomLevels`; see the maintained [BSMG PC guide](https://bsmg.wiki/pc-modding.html). Quest standalone requires a supported, modded Beat Saber setup and a custom-song importer. Consult the current [BSMG Quest guide](https://bsmg.wiki/quest-modding) for the device/game version; the exported ZIP does not install Quest mods. PCVR through Quest Link uses the PC installation path.
+
+The intended cross-platform compatibility comes from standard gameplay objects, native Weave group lighting and genuine Ogg Vorbis. This requires a game release with the native v3 group system (1.20.0 onward), plus the applicable custom-song setup. Import in a particular PC game version and Quest mod stack, VR comfort, and headset performance still need device verification. Browser mouse preview is useful for timing and visual inspection; it cannot certify VR swing ergonomics or pixel-identical rendering of the game environment.
+
+## Validation and limits
+
+`buildMapFiles(params)` returns `{filename: Uint8Array}` and throws if its export profile fails validation. `createMapZip(params)` asynchronously returns ZIP bytes. Inputs require all five difficulty keys, each with `notes`, `bombs`, `obstacles`, and `events` arrays; optional `njs` and `jumpOffset` set jump metadata. `audioBytes` must already be trimmed and Vorbis-encoded. `offset` is seconds; object beats and wall durations are beats. `coverBytes` may be PNG or JPEG. `duration` is seconds.
+
+Optional `params.lightshow` or per-difficulty `map.lightshow` contains `{environment:'WeaveEnvironment',lightColorEventBoxGroups,lightRotationEventBoxGroups,colorBoostBeatmapEvents,basicEvents}`. The color/rotation/boost arrays use native v3 JSON; `basicEvents` uses the existing generator's `{beat,type,value,floatValue}` shape. The exporter also accepts native group arrays directly on each map. It copies group structures, adds grid offset only to top-level group `b`/boost `b`, and preserves nested relative event beats. This distinction prevents the audio offset being applied twice. Missing native arrays default to empty.
+
+`validateMapFiles(files, {duration})` returns `{valid,errors,warnings,stats}`. It checks file references, versions, difficulty metadata, finite/sorted timing, grid bounds, duplicate note/bomb occupancy, wall bounds, lighting values, native Weave IDs/axes/index filters, relative timing, wave tails, and audio bounds when duration is supplied. Ogg inspection checks page boundaries, CRCs, sequence continuity, stream-end markers and three Vorbis headers, following the [Ogg framing specification](https://xiph.org/ogg/doc/framing.html) and [Vorbis specification](https://xiph.org/vorbis/doc/Vorbis_I_spec.html). It is a container/header check, not a decoder or a full semantic proof of every audio packet. Independent decoding is still valuable.
+
+The validator is deliberately an export-profile validator, not a general-purpose validator for arbitrary downloaded maps. Playability checks such as parity, body paths and wall/note intersections belong to generation and human playtesting. Passing these checks does not mean BeatSaver acceptance, ranking eligibility, or verified game import.
+
+Tests exercise ZIP round-trip, all five references, real libvorbis audio, corruption/truncation, offset conversion, metadata, invalid grid/timing/lighting, note/bomb occupancy, native color waves, rotation sweeps, boost cues, invalid native IDs/axes/filters and delayed wave tails.

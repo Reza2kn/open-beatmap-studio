@@ -1,0 +1,7 @@
+node_modules/
+dist/
+.openai/*.tar.gz
+.openai/*.tgz
+.DS_Store
+coverage/
+.venv/
