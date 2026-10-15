@@ -1,4 +1,4 @@
-import { fft, pickOnsets, refineOnsetTimes } from './dsp.js';
+import { fft, pickOnsets, refineOnsetTimes, zeroPhaseBandpass } from './dsp.js';
 const pause = () => new Promise(resolve => setTimeout(resolve, 0));
 const clamp = x => Math.max(0, Math.min(1, x));
 
@@ -72,9 +72,13 @@ export async function extractPercussion(samples, rate, spectra, n, hop) {
   for(let i=0;i<transient.length;i++) if(norm[i]>.01) transient[i]/=norm[i];
   const percentiles=novelty.map(values=>{const sorted=Float32Array.from(values).sort();return sorted[Math.floor(sorted.length*.985)]||1;});
   const merged=[];
+  const bands=[[30,Math.min(250,rate*.47)],[250,Math.min(2000,rate*.47)],[2000,Math.min(10000,rate*.47)]];
   for(let band=0;band<3;band++) {
     const envelope=Float32Array.from(novelty[band],v=>Math.min(2,v/percentiles[band]));
-    const attacks=refineOnsetTimes(transient,rate,pickOnsets(envelope,dt));
+    const [low,high]=bands[band];
+    if(high<=low)continue;
+    const isolated=zeroPhaseBandpass(transient,rate,low,high);
+    const attacks=refineOnsetTimes(isolated,rate,pickOnsets(envelope,dt));
     for(const attack of attacks) {
       const f=attack.frame;
       const values=novelty.map((array,i)=>array[f]/percentiles[i]);

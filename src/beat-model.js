@@ -10,10 +10,13 @@ export function applyBeatModel(analysis, result) {
     beatTimes: times.slice(), modelBeatTimes: times.slice(),
     downbeatTimes: (result.downbeatTimes || []).filter(t => Number.isFinite(t) && t >= 0 && t < analysis.duration),
     beatSource: "learned", beatModel: result.model, modelQuality: result.quality,
-    modelWarnings: result.warnings || [],
+    modelWarnings: [...(result.warnings || []), ...(result.melodicSource === 'demucs-htdemucs-other' && !result.melodicMethod
+      ? ['Update the local companion for improved instrument attack detection.'] : [])],
     ...(Array.isArray(result.melodicEvents) ? {
-      melodicEvents:result.melodicEvents.filter(e=>Number.isFinite(e.time)&&e.time>=0&&e.time<analysis.duration),
+      melodicEvents:result.melodicEvents.filter(e=>Number.isFinite(e.time)&&e.time>=0&&e.time<analysis.duration
+        && !(e.source==='demucs-htdemucs-other' && e.detail)),
       melodicSource:result.melodicSource,
+      melodicMethod:result.melodicMethod,
     } : {}),
     ...(Array.isArray(result.percussionEvents) ? {
       percussionEvents: result.percussionEvents.filter(e=>Number.isFinite(e.time)&&e.time>=0&&e.time<analysis.duration),

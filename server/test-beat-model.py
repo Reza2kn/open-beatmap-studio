@@ -90,6 +90,35 @@ class BeatModelTests(unittest.TestCase):
         found=[time for time in hats if any(event.get('detail') and abs(event['time']-time)<.02 for event in events)]
         self.assertGreaterEqual(len(found),len(hats)*.9)
 
+    def test_instrument_attacks_reject_voice_leakage_and_keep_known_piano_hits(self):
+        sr = 22050
+        instruments = np.zeros(sr * 7, dtype=np.float32)
+        vocals = np.zeros_like(instruments)
+        expected = [1.0, 2.0, 3.0, 4.0]
+        for index, timestamp in enumerate(expected):
+            t = np.arange(round(.5 * sr)) / sr
+            pluck = .5 * (np.sin(2 * np.pi * (330 + index * 55) * t) + .25 * np.sin(2 * np.pi * (660 + index * 110) * t)) * np.exp(-t * 14)
+            start = round(timestamp * sr)
+            instruments[start:start + len(t)] += pluck.astype(np.float32)
+        for timestamp in [1.5, 2.5, 3.5, 4.5]:
+            t = np.arange(round(.25 * sr)) / sr
+            voiced = (.7 * np.sin(2 * np.pi * 170 * t) + .2 * np.sin(2 * np.pi * 510 * t)) * np.exp(-t * 10)
+            start = round(timestamp * sr)
+            vocals[start:start + len(t)] += voiced.astype(np.float32)
+            instruments[start:start + len(t)] += (voiced * .025).astype(np.float32)
+        events = module.instrument_events(instruments, vocals, sr, np)
+        for timestamp in expected:
+            self.assertTrue(any(abs(event['time'] - timestamp) < .015 for event in events), timestamp)
+        self.assertFalse(any(abs(event['time'] - timestamp) < .05 for event in events for timestamp in [1.5, 2.5, 3.5, 4.5]))
+        self.assertTrue(all(not event.get('detail') and event['tonalConfidence'] >= .65 for event in events))
+
+    def test_sustained_tone_modulation_does_not_fill_instrument_notes(self):
+        sr = 22050
+        t = np.arange(sr * 6) / sr
+        pad = (.08 * np.sin(2 * np.pi * 440 * t) * (1 + .1 * np.sin(2 * np.pi * 4 * t))).astype(np.float32)
+        events = module.instrument_events(pad, np.zeros_like(pad), sr, np)
+        self.assertLessEqual(sum(event['time'] > .3 for event in events), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

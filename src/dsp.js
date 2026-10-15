@@ -1,4 +1,44 @@
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+/** Offline forward/reverse Butterworth filtering, with reflected boundaries.
+ * Refining a hat on a full-band waveform can instead select a louder nearby
+ * kick. Keep the refinement in the frequency band that proposed the attack.
+ * Forward/reverse filtering avoids adding the IIR filter's group delay.
+ */
+export function zeroPhaseBandpass(samples, sampleRate, low, high) {
+  if (!(sampleRate > 0 && low > 0 && high > low && high < sampleRate / 2))
+    throw new RangeError('Band limits must lie inside the sample rate Nyquist range.');
+  if (samples.length < 2) return Float32Array.from(samples);
+  const padding = Math.min(samples.length - 1, Math.ceil(sampleRate * .04));
+  const signal = new Float64Array(samples.length + padding * 2);
+  for (let i = 0; i < signal.length; i++) {
+    const index = i - padding;
+    signal[i] = samples[index < 0 ? -index : index >= samples.length ? 2 * samples.length - 2 - index : index];
+  }
+  const coefficients = (frequency, highpass) => {
+    const omega = 2 * Math.PI * frequency / sampleRate;
+    const cosine = Math.cos(omega), alpha = Math.sin(omega) / Math.SQRT2;
+    const a0 = 1 + alpha;
+    return [(1 + (highpass ? cosine : -cosine)) / 2 / a0,
+      (highpass ? -(1 + cosine) : 1 - cosine) / a0,
+      (1 + (highpass ? cosine : -cosine)) / 2 / a0,
+      -2 * cosine / a0, (1 - alpha) / a0];
+  };
+  const filters = [coefficients(low, true), coefficients(high, false)];
+  const pass = reverse => {
+    for (const [b0,b1,b2,a1,a2] of filters) {
+      let x1=0,x2=0,y1=0,y2=0;
+      for (let j=0;j<signal.length;j++) {
+        const i=reverse ? signal.length-1-j : j, x=signal[i];
+        const y=b0*x+b1*x1+b2*x2-a1*y1-a2*y2;
+        signal[i]=y; x2=x1; x1=x; y2=y1; y1=y;
+      }
+    }
+  };
+  pass(false); pass(true);
+  return Float32Array.from(signal.subarray(padding, padding + samples.length));
+}
+
 export function fft(real, imag) {
   const n = real.length;
   for (let i = 1, j = 0; i < n; i++) {

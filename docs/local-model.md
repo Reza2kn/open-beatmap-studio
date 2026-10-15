@@ -71,6 +71,12 @@ The script uses the author's `Audio2Frames`, including exact log-Mel preprocessi
   // percussionMethod: 'learned-drum-stem',
   // percussionEvents: [{time,strength,kind,confidence,low,mid,high,
   //                     percussiveRatio:1,source:'demucs-htdemucs'}],
+  // melodicSource: 'demucs-htdemucs-other',
+  // melodicMethod: 'tonal-attacks-vocal-veto',
+  // melodicEvents: [{time,strength,kind:'melodic',confidence,
+  //                 source:'demucs-htdemucs-other',tonalConfidence,
+  //                 attackContrast,spectralChange,vocalDominance,
+  //                 vocalCoherence,instrumentMethod:'tonal-attacks-vocal-veto'}],
   // drumQuality: {model,checkpointSha256,device,inputSampleRate,inputMono,
   //               separatorSampleRate,eventCount,activeRanges:[{start,end}],
   //               onsetMethod,confidenceIsHeuristic,elapsedSeconds}
@@ -113,3 +119,15 @@ The existing checkpoint sizes establish an approximate model-download budget: ~8
 ## Layered rhythm update (v0.3.1)
 
 The production separator also reads its `other` instrument stem, detects its actual attacks and returns `melodicEvents` / `melodicSource`. This makes piano/backing-instrument rhythms available during drum sections as well as the intro. Band-balanced spectral flux and band-filtered energy rises recover quieter drum detail that full-band kick energy can hide. Detail candidates retain physical timestamps; they do not fill an imagined uniform grid. Harder profiles admit progressively more of those events, with 32nd-note candidates reserved for isolated percussion or the most detailed instrumental profile. Note clicks are enabled by default and counted as distinct timestamps, not simultaneous saber objects.
+
+## Instrument selection correction (v0.4)
+
+An audit found that the shared detector had also applied its drum-detail extractor to the `other` stem. Band-normalized brightness changes in reverberation, sustained instruments and separator residues could consequently become extra melodic notes. The instrument path now explicitly disables that drum-detail detector. It requires an audible tonal attack and checks the simultaneously estimated vocal stem for leakage; the drum detector remains separate.
+
+For each instrument candidate, `attackContrast` is RMS after the attack (+5 to +40 ms) divided by RMS before it (−50 to −15 ms). `spectralChange` is one minus the cosine similarity of the before/after magnitude spectra. `tonalConfidence` is one minus spectral flatness over 90–6000 Hz. Candidates require tonal confidence at least .65 and either contrast at least 1.3, or spectral change at least .18 with contrast at least .85. A track-relative audible floor rejects very faint residues. Over a 100 ms window, `vocalDominance` is vocal RMS/instrument RMS and `vocalCoherence` is absolute waveform cosine similarity; dominance above 15, or dominance above 4 with coherence above .18, vetoes a candidate. These are conservative heuristics, not calibrated probabilities or a learned instrument classifier. A real quiet instrument under loud vocals may be omitted. No filename or song-specific condition is used.
+
+The actual full production CLI on the supplied recording returned 511 percussion events (476 core plus 31 mid-band details and four high-band details) and 373 tonal instrument events, in 83.27 seconds on the tested CPU. An independent diagnostic used a separately run stereo-input htdemucs estimate and a different analytic-amplitude rise detector, without reading map `sourceTime` fields or calling the production onset extractor. Over 0–188 seconds, instrument candidates agreeing with independent attacks within 20 ms increased from 53.5% to 75.9%, and agreement within 40 ms increased from 78.2% to 94.1%. Candidates farther than 80 ms from an independent attack fell from 60 to one. This compares the old 1,274 candidates in that interval with the new 373; it is not a fixed-size benchmark or manual accuracy annotation.
+
+All ten production hat candidates, including the four added high-band details, agreed with independent high-band rises within 20 ms; 30 of 31 mid-band detail candidates agreed with independently measured 350–2000 Hz rises within 20 ms. A `detail` flag denotes optional salience, not a high-frequency instrument label. These checks do not establish that every quieter hat was detected; lowering a threshold solely to increase note counts would not establish that either.
+
+For reconstructed previous-generation maps, independently measured core snare timing had a median scheduled-minus-reference difference of about +1 ms, and kick medians ranged from +2 to +6 ms by passage. The independent detector itself backtracked approximately 2–3 ms early on known synthetic attacks. Original MP3 versus retained exported Ogg waveform correlation found zero sample lag in five separated passages. These results argue against a single global offset correction; the instrument-selection bug and individual band refinement errors require their own fixes. Remaining differences, separator artifacts and perceptual timing still need listening review. Private song/stem diagnostics remain ignored and are not distributed as test assets.

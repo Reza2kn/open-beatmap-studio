@@ -1,6 +1,20 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { applyBeatModel } from "../src/beat-model.js";
+
+test('legacy instrument output cannot reuse drum-detail novelty as tonal hits',()=>{
+  const result={duration:10,bpm:120,offset:0,beatTimes:[1,1.5,2,2.5],
+    melodicSource:'demucs-htdemucs-other',melodicEvents:[
+      {time:1,source:'demucs-htdemucs-other',detail:true},
+      {time:2,source:'demucs-htdemucs-other'},
+    ]};
+  const out=applyBeatModel({duration:10},result);
+  assert.deepEqual(out.melodicEvents.map(e=>e.time),[2]);
+  assert.ok(out.modelWarnings.some(message=>message.includes('Update the local companion')));
+  const current=applyBeatModel({duration:10},{...result,melodicMethod:'tonal-attacks-vocal-veto'});
+  assert.equal(current.melodicMethod,'tonal-attacks-vocal-veto');
+  assert.deepEqual(current.modelWarnings,[]);
+});
 import { createBridge } from "../server/bridge.mjs";
 
 test("learned result preserves irregular beat times and rejects mismatched audio", () => {

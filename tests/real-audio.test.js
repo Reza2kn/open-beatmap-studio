@@ -86,9 +86,17 @@ test(
       const layered=applyBeatModel(analysis,result), maps=generateMaps(layered);
       const counts=Object.fromEntries(Object.entries(maps).map(([d,map])=>[d,new Set(map.notes.map(n=>n.beat)).size]));
       for(const [d,minimum]of Object.entries(fixture.minimumLayeredClicks??{})) assert.ok(counts[d]>=minimum,`${d}: ${counts[d]} < ${minimum}`);
-      assert.ok(counts.Expert>counts.Hard);
-      assert.ok(counts.ExpertPlus>=counts.Expert*1.35);
-      assert.ok(counts.Hard>=counts.Normal*2);
+      // Easy now has the former Hard groove. Old twofold tier ratios would
+      // reward throwing away musical hits again, so require grounded growth.
+      if(fixture.minimumEasyClicks)assert.ok(counts.Easy>=fixture.minimumEasyClicks,`Easy:${counts.Easy} is below the explicitly recalibrated grounded baseline`);
+      const difficulties=['Easy','Normal','Hard','Expert','ExpertPlus'];
+      for(let index=1;index<difficulties.length;index++)assert.ok(counts[difficulties[index]]>counts[difficulties[index-1]],`${difficulties[index]} must add supported attacks: ${JSON.stringify(counts)}`);
+      const easyTimes=new Set(maps.Easy.notes.map(note=>note.sourceTime));
+      for(const difficulty of difficulties.slice(1)) {
+        const times=new Set(maps[difficulty].notes.map(note=>note.sourceTime));
+        const retained=[...easyTimes].filter(time=>times.has(time)).length/easyTimes.size;
+        assert.ok(retained>=.98,`${difficulty} should preserve Easy's grounded backbone: ${retained}`);
+      }
       const sourceTimes=[...result.percussionEvents,...result.melodicEvents].map(e=>e.time).sort((a,b)=>a-b);
       for(const map of Object.values(maps)) {
         assert.equal(map.validation.valid,true);
@@ -123,7 +131,7 @@ test(
       const times = noteTimes(map, learned).filter((time) => time >= start && time <= end);
       assert.ok(times.length > 20, difficulty);
       const covered = pulse.filter((time) => nearestDistance(times, time) <= 0.035).length / pulse.length;
-      const minimumCoverage = difficulty === "Easy" ? 0.48 : 0.98;
+      const minimumCoverage = 0.98;
       assert.ok(covered >= minimumCoverage,
         `${difficulty}: only ${(covered * 100).toFixed(1)}% of independent pulse beats retained`);
       const errors = times.map((time) => nearestDistance(sixteenths, time));
@@ -131,11 +139,8 @@ test(
         `${difficulty}: independent subdivision median ${percentile(errors, 0.5)} s`);
       assert.ok(percentile(errors, 0.9) <= 0.035,
         `${difficulty}: independent subdivision p90 ${percentile(errors, 0.9)} s`);
-      if (difficulty === "Easy" || difficulty === "Normal") {
-        const onPulse = times.filter((time) => nearestDistance(pulse, time) <= 0.035).length / times.length;
-        assert.ok(onPulse >= 0.9,
-          `${difficulty}: ${(onPulse * 100).toFixed(1)}% of attacks reinforce the independent pulse`);
-      }
+      assert.ok(map.rhythmDiagnostics.backboneCoverage >= .98,
+        `${difficulty}: the complete pulse must remain present while supported subdivisions add difficulty`);
       // Uncertain model tails are intentionally unfilled; do not extrapolate.
       assert.ok(Math.max(...noteTimes(map, learned)) <= result.beatTimes.at(-1) + 0.04);
     }

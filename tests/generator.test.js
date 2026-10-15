@@ -122,7 +122,7 @@ test('known musical pulse wins over unrelated broadband/vocal attacks', () => {
     assert.equal(maps[difficulty].rhythmDiagnostics.backboneCoverage, 1);
   }
   const easy = absoluteTimes(maps.Easy, analysis);
-  for (let index = 1; index < easy.length; index++) assert.ok(Math.abs(easy[index] - easy[index - 1] - 1.2) < .0002);
+  for (let index = 1; index < easy.length; index++) assert.ok(Math.abs(easy[index] - easy[index - 1] - .6) < .0002);
   assert.equal(maps.Easy.rhythmDiagnostics.subdivisionCount, 0);
 });
 
@@ -167,7 +167,7 @@ test('piano intro transitions into the known drum groove without metronome fille
   assert.ok(map.rhythmDiagnostics.pulseCoverage < 1, 'quarter coverage is not a drum-groove quality target');
 });
 
-test('weak false percussion cannot displace a stronger snare in a playability conflict', () => {
+test('the recalibrated Easy keeps the stronger snare during a playability conflict', () => {
   const analysis = grooveFixture();
   const strong = [], weak = [];
   for (let bar=4;bar<15;bar++) {
@@ -176,7 +176,7 @@ test('weak false percussion cannot displace a stronger snare in a playability co
     analysis.percussionEvents.push({time:time-.12,strength:.46,confidence:.95,kind:'snare',percussiveRatio:.9});
   }
   analysis.percussionEvents.sort((a,b)=>a.time-b.time);
-  const map=generateMaps(analysis,{bombs:false,walls:false}).Hard;
+  const map=generateMaps(analysis,{bombs:false,walls:false}).Easy;
   const times=absoluteTimes(map,analysis);
   for(const time of strong)assert.ok(times.some(actual=>Math.abs(actual-time)<.0001));
   for(const time of weak)assert.ok(!times.some(actual=>Math.abs(actual-time)<.0001));
@@ -525,6 +525,29 @@ test("static validator catches overlaps, rapid repeats, parity, unsafe walls and
 });
 
 
+test('Easy preserves the former Hard timing baseline on a controlled full groove', () => {
+  const analysis=grooveFixture();analysis.percussionSource='demucs-htdemucs';
+  for(let bar=4;bar<16;bar++)for(const phase of [.5,1.25,2.5,3.25])analysis.melodicEvents.push({time:.2+(bar*4+phase)*.6,kind:'melodic',strength:.6,confidence:.9});
+  const maps=generateMaps(analysis,{walls:false,bombs:false});
+  // This manually specified twelve-hit bar was the old Hard rhythm. It must
+  // survive the new Easy tier, rather than falling back to two kicks per bar.
+  const baseline=[0,.5,.75,1,1.25,1.5,2,2.5,2.75,3,3.25,3.5];
+  for(const bar of [5,6,7,8,9,10,11,12,13,14]) {
+    const expected=baseline.map(phase=>Math.round((.2+(bar*4+phase)*.6)*10000)/10000);
+    const actual=absoluteTimes(maps.Easy,analysis).filter(time=>time>=.2+bar*4*.6-.0001&&time<.2+(bar+1)*4*.6-.0001);
+    assert.deepEqual(actual,expected,`bar ${bar}`);
+  }
+  assert.equal(maps.Easy.generation.difficultyCalibration,'full-groove-baseline');
+  assert.equal(maps.Easy.generation.minHandIntervalSeconds,.28);
+  assert.equal(maps.Easy.generation.minNoteIntervalSeconds,.14);
+  for(const map of Object.values(maps)) {
+    const times=new Set(map.notes.map(note=>note.sourceTime));
+    for(const time of maps.Easy.notes.map(note=>note.sourceTime))assert.ok(times.has(time),`${map.difficulty} retains Easy's groove`);
+    assert.deepEqual(map.validation.errors,[]);
+    assert.deepEqual(map.validation.warnings,[]);
+  }
+});
+
 test('harder levels cover more real percussion and layered melody without adding filler hits',()=>{
   const a=grooveFixture();a.percussionSource='demucs-htdemucs';
   for(let bar=4;bar<16;bar++) {
@@ -536,7 +559,9 @@ test('harder levels cover more real percussion and layered melody without adding
   }
   const maps=generateMaps(a,{walls:false,bombs:false});
   const count=d=>new Set(maps[d].notes.map(n=>n.beat)).size;
-  assert.ok(count('Hard')>count('Normal')*1.5);
+  const counts=DIFFICULTIES.map(count);
+  for(let index=1;index<counts.length;index++)assert.ok(counts[index]>=counts[index-1],counts.join('/'));
+  assert.ok(count('Easy')>=140,'Easy starts with the full former-Hard groove');
   assert.ok(count('Expert')>=count('Hard'), 'Expert retains Hard when the supported 16th-note grid is already full');
   assert.ok(count('ExpertPlus')>count('Expert')*1.15);
   assert.ok(maps.Expert.notes.some(n=>n.timingRole==='melodic-layer'));
@@ -551,9 +576,28 @@ test('harder levels cover more real percussion and layered melody without adding
 test('Expert+ can use quiet isolated instrument fills while rejecting unaligned attacks',()=>{
   const a=grooveFixture();a.percussionSource='demucs-htdemucs';
   const real=.2+(9*4+1.25)*.6, unaligned=.2+(9*4+1.07)*.6;
-  for(const time of [real,unaligned])a.melodicEvents.push({time,kind:'melodic',strength:.05,confidence:.8,source:'demucs-htdemucs-other'});
+  for(const time of [real,unaligned])a.melodicEvents.push({time,kind:'melodic',strength:.04,confidence:.8,source:'demucs-htdemucs-other'});
   const maps=generateMaps(a,{walls:false,bombs:false});
   assert.ok(maps.ExpertPlus.notes.some(n=>Math.abs(n.sourceTime-real)<.00001));
   assert.ok(!maps.ExpertPlus.notes.some(n=>Math.abs(n.sourceTime-unaligned)<.00001));
   for(const d of ['Easy','Normal','Hard','Expert'])assert.ok(!maps[d].notes.some(n=>Math.abs(n.sourceTime-real)<.00001));
+});
+
+
+test('higher tiers add quiet proven piano phases without promoting broadband or vocal leakage', () => {
+  const analysis=grooveFixture();analysis.percussionSource='demucs-htdemucs';
+  const piano=[],noise=[];
+  for(let bar=4;bar<15;bar++) {
+    const real=.2+(bar*4+1.25)*.6,bad=.2+(bar*4+.5)*.6;
+    piano.push(real);noise.push(bad);
+    analysis.melodicEvents.push({time:real,strength:.04,confidence:.9,kind:'melodic',source:'demucs-htdemucs-other',instrumentMethod:'tonal-attacks-vocal-veto',tonalConfidence:.98,attackContrast:3,spectralChange:.4,vocalDominance:.2,vocalCoherence:.01});
+    analysis.melodicEvents.push({time:bad,strength:1,confidence:.99,kind:'melodic',source:'demucs-htdemucs-other',instrumentMethod:'tonal-attacks-vocal-veto',tonalConfidence:.1,attackContrast:5,spectralChange:.6,vocalDominance:8,vocalCoherence:.9});
+  }
+  const maps=generateMaps(analysis,{walls:false,bombs:false});
+  assert.ok(!maps.Easy.notes.some(note=>piano.includes(note.sourceTime)));
+  assert.ok(maps.Normal.notes.some(note=>piano.includes(note.sourceTime)));
+  for(const map of Object.values(maps)) {
+    assert.ok(!map.notes.some(note=>noise.includes(note.sourceTime)));
+    assert.deepEqual(map.validation.errors,[]);
+  }
 });

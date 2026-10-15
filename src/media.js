@@ -205,6 +205,9 @@ export class Transport {
     this.position = 0;
     this.rate = 1;
     this.playing = false;
+    this.playGeneration = 0;
+    this.pendingPlay = null;
+    this.endTimer = null;
     this.clickTimes = [];
     this.clickNodes = new Set();
     this.gain = context.createGain();
@@ -229,29 +232,60 @@ export class Transport {
         )
       : this.position;
   }
-  async play() {
-    if (!this.buffer) return;
-    await this.context.resume();
-    if (this.time >= this.buffer.duration - 0.01) this.position = 0;
-    this.source = this.context.createBufferSource();
-    this.source.buffer = this.buffer;
-    this.source.playbackRate.value = this.rate;
-    this.source.connect(this.gain);
-    this.started = this.context.currentTime;
-    this.playing = true;
-    this.source.onended = () => {
-      if (this.playing) {
-        this.stopClicks();
-        this.position = this.buffer.duration;
-        this.playing = false;
-        this.onChange();
-      }
+  play() {
+    if (!this.buffer || this.playing) return Promise.resolve();
+    if (this.pendingPlay) return this.pendingPlay;
+    const generation = ++this.playGeneration;
+    const request = (async () => {
+      await this.context.resume();
+      // Pause, load, seek, or a newer play request can supersede a pending
+      // resume. Never start its stale source after the user has moved on.
+      if (generation !== this.playGeneration) return;
+      if (this.time >= this.buffer.duration - 0.01) this.position = 0;
+      const source = this.context.createBufferSource();
+      const buffer = this.buffer;
+      this.source = source;
+      source.buffer = buffer;
+      source.playbackRate.value = this.rate;
+      source.connect(this.gain);
+      this.started = this.context.currentTime;
+      this.playing = true;
+      source.onended = () => {
+        // The render graph finishes before its buffered audio reaches the
+        // device. Keep the visual clock alive through that audible tail.
+        const finish = () => {
+          if (generation !== this.playGeneration || this.source !== source || !this.playing) return;
+          const remaining = (buffer.duration - this.time) / this.rate;
+          if (remaining > 0.001) {
+            this.endTimer = setTimeout(finish, Math.max(4, Math.min(25, remaining * 1000)));
+            return;
+          }
+          this.endTimer = null;
+          this.stopClicks();
+          this.position = buffer.duration;
+          this.playing = false;
+          source.onended = null;
+          source.disconnect();
+          this.onChange();
+        };
+        finish();
+      };
+      source.start(0, this.position);
+      this.startClicks();
+      this.onChange();
+    })();
+    this.pendingPlay = request;
+    const clearPending = () => {
+      if (this.pendingPlay === request) this.pendingPlay = null;
     };
-    this.source.start(0, this.position);
-    this.startClicks();
-    this.onChange();
+    request.then(clearPending, clearPending);
+    return request;
   }
   pause() {
+    ++this.playGeneration;
+    this.pendingPlay = null;
+    clearTimeout(this.endTimer);
+    this.endTimer = null;
     this.stopClicks();
     if (this.playing) {
       this.position = this.time;
@@ -263,7 +297,7 @@ export class Transport {
     this.onChange();
   }
   seek(t) {
-    const playing = this.playing;
+    const playing = this.playing || Boolean(this.pendingPlay);
     this.pause();
     this.position = Math.max(0, Math.min(this.buffer?.duration || 0, t));
     if (playing) this.play();
@@ -325,7 +359,7 @@ export class Transport {
     this.clickTimer = setInterval(schedule, 40);
   }
   setRate(rate) {
-    const playing = this.playing;
+    const playing = this.playing || Boolean(this.pendingPlay);
     this.pause();
     this.rate = rate;
     if (playing) this.play();

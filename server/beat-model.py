@@ -255,7 +255,7 @@ def stem_details(signal, sample_rate, core_events, np):
     return output
 
 
-def stem_events(signal, sample_rate, np):
+def stem_events(signal, sample_rate, np, include_details=True):
     """Physical attacks in an already isolated drum estimate, not a beat grid."""
     from scipy.signal import find_peaks
     step = max(1, round(sample_rate * .002))
@@ -310,8 +310,64 @@ def stem_events(signal, sample_rate, np):
             ranges[-1]["end"] = end
         else:
             ranges.append({"start": index, "end": end})
-    events.extend(stem_details(signal, sample_rate, events, np))
+    if include_details:
+        events.extend(stem_details(signal, sample_rate, events, np))
     return sorted(events,key=lambda event:event["time"]), ranges
+
+
+def instrument_events(signal, vocals, sample_rate, np):
+    """Audible tonal attacks in 'other', not relabeled drum/hiss novelty.
+
+    The separator's other stem can contain voice leakage and sustained/reverb
+    modulation. Require a new tonal attack and veto dominant coherent vocals.
+    Feature confidence remains heuristic; this is not a piano classifier.
+    """
+    candidates, _ = stem_events(signal, sample_rate, np, include_details=False)
+    windows = [float(np.sqrt(np.mean(signal[i:i + sample_rate] ** 2))) for i in range(0, len(signal), sample_rate)]
+    audible_floor = max(1e-6, float(np.quantile(windows, .95)) * .025) if windows else 1e-6
+    def clip(audio, first, last):
+        return audio[max(0, round(first * sample_rate)):min(len(audio), round(last * sample_rate))]
+    def rms(audio):
+        return float(np.sqrt(np.mean(audio ** 2))) if len(audio) else 0.0
+    def spectrum(audio, size):
+        if len(audio) < 2:
+            return np.zeros(size // 2 + 1)
+        return np.abs(np.fft.rfft(audio * np.hanning(len(audio)), n=size))
+    events = []
+    for raw in candidates:
+        timestamp = raw["time"]
+        before = clip(signal, timestamp - .05, timestamp - .015)
+        after = clip(signal, timestamp + .005, timestamp + .04)
+        contrast = rms(after) / max(1e-7, rms(before))
+        if rms(after) < audible_floor:
+            continue
+        size = max(1024, 1 << max(1, max(len(before), len(after)) - 1).bit_length())
+        old_spectrum, new_spectrum = spectrum(before, size), spectrum(after, size)
+        hz = np.fft.rfftfreq(size, 1 / sample_rate)
+        selected = (hz >= 90) & (hz <= min(6000, sample_rate * .45))
+        a, b = old_spectrum[selected], new_spectrum[selected]
+        change = 1 - float(np.dot(a, b)) / max(1e-12, float(np.linalg.norm(a) * np.linalg.norm(b)))
+        flatness = float(np.exp(np.mean(np.log(b + 1e-10))) / max(1e-10, float(np.mean(b))))
+        tonality = max(0.0, min(1.0, 1 - flatness))
+        # Sustained decay/reverb ripples and broadband consonants should not
+        # become extra notes merely because a single frequency band brightens.
+        if tonality < .65 or not (contrast >= 1.3 or (change >= .18 and contrast >= .85)):
+            continue
+        instrument = clip(signal, timestamp - .025, timestamp + .075).astype(np.float64)
+        voice = clip(vocals, timestamp - .025, timestamp + .075).astype(np.float64)
+        common = min(len(instrument), len(voice))
+        instrument, voice = instrument[:common], voice[:common]
+        norm_i, norm_v = float(np.linalg.norm(instrument)), float(np.linalg.norm(voice))
+        dominance = norm_v / max(1e-9, norm_i)
+        coherence = abs(float(np.dot(instrument, voice))) / max(1e-12, norm_i * norm_v)
+        if dominance > 15 or (dominance > 4 and coherence > .18):
+            continue
+        event = {**raw, "kind": "melodic", "source": "demucs-htdemucs-other",
+                 "tonalConfidence": round(tonality, 6), "attackContrast": round(contrast, 6),
+                 "spectralChange": round(max(0.0, change), 6), "vocalDominance": round(dominance, 6),
+                 "vocalCoherence": round(coherence, 6), "instrumentMethod": "tonal-attacks-vocal-veto"}
+        events.append(event)
+    return events
 
 
 def separate_drums(signal, sample_rate, args):
@@ -345,17 +401,17 @@ def separate_drums(signal, sample_rate, args):
         drums = drum_tensor.mean(0).cpu().numpy()
         instrument_tensor = sources[separator.sources.index("other")] * deviation + average
         instruments = instrument_tensor.mean(0).cpu().numpy()
-    del sources, drum_tensor, instrument_tensor, waveform, separator, package
+        vocal_tensor = sources[separator.sources.index("vocals")] * deviation + average
+        vocals = vocal_tensor.mean(0).cpu().numpy()
+    del sources, drum_tensor, instrument_tensor, vocal_tensor, waveform, separator, package
     drums = soxr.resample(drums, separator_rate, sample_rate) if separator_rate != sample_rate else drums
     drums = np.asarray(drums[:len(signal)], dtype=np.float32)
     events, active_ranges = stem_events(drums, sample_rate, np)
     instruments = soxr.resample(instruments, separator_rate, sample_rate) if separator_rate != sample_rate else instruments
-    instrument_events, _ = stem_events(np.asarray(instruments[:len(signal)],dtype=np.float32), sample_rate, np)
-    for event in instrument_events:
-        event["kind"]="melodic"
-        event["source"]="demucs-htdemucs-other"
+    vocals = soxr.resample(vocals, separator_rate, sample_rate) if separator_rate != sample_rate else vocals
+    melodic = instrument_events(np.asarray(instruments[:len(signal)],dtype=np.float32), np.asarray(vocals[:len(signal)],dtype=np.float32), sample_rate, np)
     return {"percussionSource": "demucs-htdemucs", "percussionMethod": "learned-drum-stem", "percussionEvents": events,
-            "melodicEvents":instrument_events, "melodicSource":"demucs-htdemucs-other",
+            "melodicEvents":melodic, "melodicSource":"demucs-htdemucs-other", "melodicMethod":"tonal-attacks-vocal-veto",
             "drumQuality": {"model": "htdemucs", "checkpointSha256": DRUM_CHECKPOINT_SHA256,
                             "device": "cpu", "inputSampleRate": sample_rate, "inputMono": True,
                             "separatorSampleRate": separator_rate, "eventCount": len(events), "activeRanges": active_ranges,

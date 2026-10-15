@@ -2,6 +2,22 @@
 
 2026-10-15, initial release. These are measured implementation checks, not a claim of ranked-map quality or headset certification.
 
+## v0.4.0: timing defects and difficulty recalibration
+
+The user still found v0.3.1 partially off beat and requested that its Hard become the new Easy baseline. Earlier structural checks and model-agreement figures did not settle that listening complaint.
+
+The browser percussion detector proposed attacks by frequency band but refined every candidate on the same full-band transient waveform. A stronger neighboring sound could therefore take a weaker sound's timestamp. Refinement now uses independent forward/reverse filtered bands, without causal filter group delay. A known-time regression mixes a quiet hat at 1.000 seconds and a loud kick at 1.040 seconds: the old full-band refinement chooses the later kick, while the corrected band-specific refinement recovers both attacks within 12 ms. On the private recording, 77 matched percussion candidates move by more than 15 ms. This count demonstrates an active code change, not proof that every moved candidate is musically correct.
+
+Transport regressions also reproduced overlapping sources after concurrent pending Play requests, and a visual jump at the end before the device's buffered tail finished. Pending starts are now coalesced/cancelled, stale source callbacks are ignored, and playback completion follows the audible clock. Click scheduling remains on the same source clock. These are demonstrated defects; neither has been established as the cause of the user's full-song complaint.
+
+Easy now retains the former Hard profile's rhythmic capacity. Upper profiles add supported rhythmic detail, accent doubles and movement complexity while keeping core percussion priority and static physical constraints. Difficulty calibration cannot justify inventing note timestamps or retaining questionable detector output.
+
+The optional neural instrument detector previously ran the drum-detail detector on the separator's `other` stem, then relabeled every result melodic. This promoted band-normalized noise, sustained modulation and voice leakage into note candidates. A separate instrument detector now requires tonal/amplitude or spectral-change evidence, an audibility floor, and a veto for dominant coherent vocal leakage. The browser also drops legacy instrument events explicitly marked as drum details and asks users of an old companion to update.
+
+The corrected full production entry point was run on the exact private recording with cached local models: 511 drum candidates and 373 instrument candidates, compared with 1,277 old instrument candidates. An independent stereo-stem analytic-amplitude audit found instrument-candidate support within 20 ms increased from 53.5% to 75.9%, and within 40 ms from 78.2% to 94.1%; unmatched candidates farther than 80 ms fell from 60 to 1. These are detector-agreement measurements, not manual musical annotations. Residual onset uncertainty remains. All four added hat candidates had independent high-band rises within 20 ms; the audit did not justify loosening gates to manufacture additional hats.
+
+Known-time helper tests cover piano-like attacks, dominant vocal leakage and sustained modulation, in addition to the browser's neighboring-kick case. No global song offset was introduced: separate codec cross-correlations showed 0 ms lag in five passages, and core drum timing had no consistent delay that warranted shifting the entire map.
+
 ## Automated
 
 `npm test`: **50 tests passed**, zero failures. This includes real synthesized PCM passed through the audio analyzer, trimming at nonzero times, five-difficulty generation, advanced native lighting, real WASM Vorbis encoding, map validation and ZIP round-trip. The choreography matrix spans 560 tempo/seed/style/difficulty combinations. Export tests include unusual BPM, positive/negative offsets, index filters, native rotation axes, brightness-wave tails, corrupt audio and malformed JSON.

@@ -10,37 +10,25 @@ export const DIFFICULTIES = Object.freeze([
   "ExpertPlus",
 ]);
 
+// Calibration starts with the former Hard groove rather than a two-hit bar.
+// Detail stages admit evidence already produced by the audio pipeline; none
+// of these profiles synthesize extra timestamps to meet a note-count target.
 const PROFILES = {
-  Easy: {
-    rank: 1,
-    handGap: 0.68,
-    gap: 0.36,
-    njs: 10,
-  },
-  Normal: {
-    rank: 3,
-    handGap: 0.46,
-    gap: 0.25,
-    njs: 12,
-  },
-  Hard: {
-    rank: 5,
-    handGap: 0.28,
-    gap: 0.14,
-    njs: 14,
-  },
-  Expert: {
-    rank: 7,
-    handGap: 0.18,
-    gap: 0.09,
-    njs: 15,
-  },
-  ExpertPlus: {
-    rank: 9,
-    handGap: 0.14,
-    gap: 0.065,
-    njs: 16,
-  },
+  Easy: { rank: 1, handGap: .28, gap: .14, njs: 14, motion: 2,
+    detailBudget: 4, tonalFillBudget: 0, finePercussion: false, fineMelody: 'none', instrumentFillStrength: Infinity,
+    drumFillDensity: Infinity, doubleEveryBars: 4 },
+  Normal: { rank: 3, handGap: .24, gap: .12, njs: 15, motion: 3,
+    detailBudget: 8, tonalFillBudget: 2, finePercussion: false, fineMelody: 'none', instrumentFillStrength: .12,
+    drumFillDensity: .85, doubleEveryBars: 2 },
+  Hard: { rank: 5, handGap: .18, gap: .09, njs: 16, motion: 4,
+    detailBudget: 12, tonalFillBudget: 4, finePercussion: false, fineMelody: 'recurring', instrumentFillStrength: .08,
+    drumFillDensity: .65, doubleEveryBars: 1 },
+  Expert: { rank: 7, handGap: .16, gap: .08, njs: 17, motion: 5,
+    detailBudget: 16, tonalFillBudget: 8, finePercussion: true, fineMelody: 'strong', instrumentFillStrength: .05,
+    drumFillDensity: .45, doubleEveryBars: 1 },
+  ExpertPlus: { rank: 9, handGap: .14, gap: .065, njs: 18, motion: 6,
+    detailBudget: 24, tonalFillBudget: Infinity, finePercussion: true, fineMelody: 'supported', instrumentFillStrength: .035,
+    drumFillDensity: .25, doubleEveryBars: 1 },
 };
 
 const VECTORS = [
@@ -328,6 +316,7 @@ function buildPercussionRhythm(context, pulse) {
   const valid = (source, melodic = false, fineMelody = false) => {
     const grouped = new Map();
     for (const raw of source) {
+      if (melodic && raw.instrumentMethod === 'tonal-attacks-vocal-veto' && (raw.tonalConfidence < .65 || !(raw.attackContrast >= 1.3 || raw.spectralChange >= .18 && raw.attackContrast >= .85) || raw.vocalDominance > 15 || raw.vocalDominance > 4 && raw.vocalCoherence > .18)) continue;
       if (isolatedDrums && !melodic && context.drumActiveRanges !== null && !context.drumActiveRanges.some(range => raw.time >= range.start && raw.time <= range.end)) continue;
       const position = positionOnPulse(pulse.pulses, raw.time);
       if (position === null) continue;
@@ -342,7 +331,7 @@ function buildPercussionRhythm(context, pulse) {
       const energy = Math.max(context.energyAt(raw.time), context.energyAt(raw.time + .04));
       if (Math.abs(position - tick / 4) > .10 || confidence < (isolatedDrums && !melodic ? .4 : .35) || strength < (isolatedDrums && !melodic ? .025 : isolatedInstruments && melodic ? .025 : .08)
         || beat < context.startBeat || beat > context.endBeat || energy < .035) continue;
-      const rawKind = raw.detail || raw.kind === 'hat' ? 'high' : raw.kind;
+      const rawKind = raw.kind === 'hat' ? 'high' : raw.kind;
       const kind = melodic ? 'melodic' : ['kick','snare','high'].includes(rawKind) ? rawKind : isolatedDrums ? (raw.low > .5 ? 'kick' : 'snare') : 'mid';
       if (!melodic && !['kick', 'snare', 'high'].includes(kind)) continue;
       const phaseTick = ((tick % 16) + 16) % 16;
@@ -360,15 +349,15 @@ function buildPercussionRhythm(context, pulse) {
   const windows = new Map();
   for (const event of [...drums, ...melody]) {
     if (!windows.has(event.window)) windows.set(event.window, new Map());
-    const key = `${event.fineMelody ? 'melody-detail' : event.melodic ? 'melody' : event.kind === 'high' ? 'high' : 'drum'}:${event.phaseTick}`;
+    const key = `${event.fineMelody ? 'melody-detail' : event.melodic ? 'melody' : event.kind === 'high' || event.detail ? 'high' : 'drum'}:${event.phaseTick}`;
     const phases = windows.get(event.window);
-    if (!phases.has(key)) phases.set(key, { phase: event.phaseTick, bars: new Set(), strength: 0, count: 0, melodic: event.melodic, fineMelody: event.fineMelody, high: event.kind === 'high' });
+    if (!phases.has(key)) phases.set(key, { phase: event.phaseTick, bars: new Set(), strength: 0, count: 0, melodic: event.melodic, fineMelody: event.fineMelody, high: event.kind === 'high' || !!event.detail });
     const item = phases.get(key);
     item.bars.add(event.bar); item.strength += event.strength; item.count++;
   }
   const regimes = new Map();
   for (const window of windows.keys()) {
-    const items = drums.filter(event => event.window === window && event.kind !== 'high');
+    const items = drums.filter(event => event.window === window && event.kind !== 'high' && !event.detail);
     const strength = median(items.map(event => event.strength));
     const dominance = median(items.map(event => finite(event.percussiveRatio, 0)));
     regimes.set(window, isolatedDrums ? items.length >= 4 && median(items.map(event=>event.confidence)) >= .4 : strength >= .45 || (strength >= .3 && dominance > .6));
@@ -383,15 +372,15 @@ function buildPercussionRhythm(context, pulse) {
   }
   const regimeThresholds = new Map();
   for (const window of windows.keys()) {
-    const strengths = drums.filter(event => event.window === window && event.kind !== 'high').map(event => event.strength).sort((a,b)=>a-b);
+    const strengths = drums.filter(event => event.window === window && event.kind !== 'high' && !event.detail).map(event => event.strength).sort((a,b)=>a-b);
     const strong = strengths[Math.floor(strengths.length * .9)] ?? .75;
     regimeThresholds.set(window, isolatedDrums ? Math.max(.025, strong * .2) : Math.max(.3, Math.min(.45, strong * .6)));
   }
   const coreBars = new Set();
   for (const event of drums) {
     const mask = masks.get(event.window) ?? [];
-    event.primary = mask.some(item => item.primary && item.phase === event.phaseTick) && event.kind !== 'high' && event.strength >= regimeThresholds.get(event.window);
-    event.hat = event.kind === 'high' && mask.some(item => item.high && item.phase === event.phaseTick);
+    event.primary = mask.some(item => item.primary && item.phase === event.phaseTick) && event.kind !== 'high' && !event.detail && event.strength >= regimeThresholds.get(event.window);
+    event.hat = (event.kind === 'high' || event.detail) && mask.some(item => item.high && item.phase === event.phaseTick);
     if (event.primary) coreBars.add(event.bar);
   }
   const events = [];
@@ -526,76 +515,71 @@ function buildRhythm(context) {
     mode: 'pulse-fallback', synthetic: pulse.synthetic, signatures: new Set([...masks.values()].map(mask => mask.map(item => item.phase).join(','))).size };
 }
 
-function selectGroovePhases(core, budget) {
-  if (core.length <= budget) return core;
-  const selected = [];
-  // The two slow-difficulty anchors should span the bar, not form an
-  // adjacent pair merely because those two transients are marginally louder.
-  const first = [...core].sort((a,b) => Math.min(a.phase,16-a.phase) - Math.min(b.phase,16-b.phase) || b.score-a.score)[0];
-  if (first) selected.push(first);
-  while (selected.length < budget) {
-    const remaining = core.filter(item => !selected.includes(item));
-    remaining.sort((a,b) => {
-      const distance = item => Math.min(...selected.map(other => Math.min(Math.abs(item.phase-other.phase),16-Math.abs(item.phase-other.phase))));
-      return distance(b)-distance(a) || b.score-a.score || a.phase-b.phase;
-    });
-    if (!remaining.length) break;
-    selected.push(remaining[0]);
-  }
-  return selected;
-}
-
 function chooseRhythm(context, rhythm, profile, level, density) {
-  const strideFor = () => {
-    let stride = level === 0 ? (density < .3 ? 4 : 2) : level === 1 && density < .3 ? 2 : 1;
-    while (stride * rhythm.pulse.period < Math.max(profile.gap, profile.handGap / 2)) stride *= 2;
-    return stride;
-  };
-  const stride = strideFor();
   const output = [];
   if (rhythm.mode === 'percussion-groove') {
-    const selectedCore = new Map();
-    const coreBudget = level === 0 ? (density < .3 ? 1 : 2) : level === 1 ? (density < .3 ? 2 : 4) : level === 2 && density < .3 ? 4 : Infinity;
+    const detailPhases = new Map();
+    const tonalFillPhases = new Map();
     for (const event of rhythm.events) {
-      const key = `${event.window}:${event.melodic}`;
-      if (!selectedCore.has(key)) {
-        const mask = rhythm.masks.get(event.window) ?? [];
-        const core = mask.filter(item => event.melodic ? item.melodic && !item.fineMelody : item.primary);
-        selectedCore.set(key, selectGroovePhases(core, coreBudget));
+      if (event.primary) { output.push(event); continue; }
+      const windowMask = rhythm.masks.get(event.window) ?? [];
+      if (event.fineMelody) {
+        const recurring = windowMask.some(item => item.fineMelody && item.phase === event.phaseTick && item.bars.size >= 3);
+        const admitted = profile.fineMelody === 'supported'
+          || profile.fineMelody === 'strong' && event.strength >= .08
+          || profile.fineMelody === 'recurring' && event.strength >= .12 && recurring;
+        if (density > .35 && admitted) output.push(event);
+        continue;
       }
-      const core = selectedCore.get(key);
-      if (event.primary) {
-        if (event.melodic && !core.length) {
-          if (level >= 2 || event.index % (level === 0 ? 2 : 1) === 0) output.push(event);
-        } else if (core.some(item => item.phase === event.phaseTick)) output.push(event);
-      } else if (event.fineMelody || event.expertFill) {
-        if (level===4 && density>.35) output.push(event);
-      } else if (level >= 2 && density > .25 && (event.hat || event.secondary)) {
-        const windowMask = rhythm.masks.get(event.window) ?? [];
-        // Spend the detail budget on gaps in the drum groove. Its loudest
-        // melodic phases often coincide with kicks, which adds no new hits.
-        const mask = windowMask.filter(item=>event.secondary
-          ? item.melodic && !item.fineMelody && item.bars.size>=2 && !windowMask.some(drum=>drum.primary&&drum.phase===item.phase)
-          : item.high && (level===4 || Number.isInteger(item.phase)));
-        const budget = Math.max(1, Math.round(([0,0,4,8,16][level]) * density / .65));
-        if (mask.slice(0,budget).some(item=>item.phase===event.phaseTick)) output.push(event);
-      } else if (event.fill && level >= 3 && density > (level===3?.7:.35)) output.push(event);
+      if (event.expertFill) {
+        let provenTonalPhase = false;
+        if (profile.tonalFillBudget > 0 && event.instrumentMethod === 'tonal-attacks-vocal-veto') {
+          if (!tonalFillPhases.has(event.window)) {
+            const phases = new Map();
+            for (const candidate of rhythm.events) {
+              if (candidate.window !== event.window || !candidate.expertFill || candidate.fineMelody || candidate.instrumentMethod !== 'tonal-attacks-vocal-veto') continue;
+              const quality = candidate.strength + .25 * candidate.tonalConfidence + .05 * Math.min(4, candidate.attackContrast);
+              phases.set(candidate.phaseTick, Math.max(phases.get(candidate.phaseTick) ?? 0, quality));
+            }
+            const ranked = [...phases].sort((a,b)=>b[1]-a[1]||a[0]-b[0]);
+            const budget = Number.isFinite(profile.tonalFillBudget) ? Math.max(1, Math.round(profile.tonalFillBudget * density / .65)) : Infinity;
+            tonalFillPhases.set(event.window, new Set(ranked.slice(0,budget).map(([phase])=>phase)));
+          }
+          provenTonalPhase = tonalFillPhases.get(event.window).has(event.phaseTick);
+        }
+        if (density > .35 && (event.strength >= profile.instrumentFillStrength || provenTonalPhase)) output.push(event);
+        continue;
+      }
+      if (density > .25 && (event.hat || event.secondary)) {
+        const key = `${event.window}:${event.secondary ? 'instrument' : 'percussion'}`;
+        if (!detailPhases.has(key)) {
+          // Keep the drum groove intact; an overlapping instrument attack
+          // cannot consume a detail slot that could fill an actual gap.
+          const mask = windowMask.filter(item => event.secondary
+            ? item.melodic && !item.fineMelody && item.bars.size >= 2 && !windowMask.some(drum => drum.primary && drum.phase === item.phase)
+            : item.high && (profile.finePercussion || Number.isInteger(item.phase)));
+          const budget = Math.max(1, Math.round(profile.detailBudget * density / .65));
+          detailPhases.set(key, new Set(mask.slice(0, budget).map(item => item.phase)));
+        }
+        if (detailPhases.get(key).has(event.phaseTick)) output.push(event);
+      } else if (event.fill && density >= profile.drumFillDensity) output.push(event);
     }
-    return output.sort((a,b)=>a.time-b.time);
+    return output.sort((a,b) => a.time-b.time);
   }
+  // Without separated drums, preserve the complete pulse and add only the
+  // same recurring percussion-supported masks used by the former Hard tier.
+  let stride = 1;
+  while (stride * rhythm.pulse.period < Math.max(profile.gap, profile.handGap / 2)) stride *= 2;
   for (const event of rhythm.events) {
     if (event.isPulse) {
-      if (event.index % stride !== 0) continue;
-      output.push({ ...event, signature: level < 2 ? `backbone:${stride}` : event.signature });
+      if (event.index % stride === 0) output.push(event);
       continue;
     }
-    if (level < 2) continue;
-    const masks = rhythm.masks.get(event.window) ?? [];
-    const maximum = [0, 0, 2, 4, 8][level];
+    const maximum = [2, 3, 4, 6, 8][level];
     const budget = Math.round(maximum * density * (.45 + (rhythm.windowEnergy.get(event.window) ?? event.energy) * .75));
-    if (masks.slice(0, budget).some(item => item.phase === event.evidencePhase)) output.push(event);
+    if ((rhythm.masks.get(event.window) ?? []).slice(0, budget).some(item => item.phase === event.evidencePhase)) output.push(event);
   }
-  return output.sort((a, b) => a.time - b.time);
+  return output.sort((a,b) => a.time-b.time);
 }
 
 /** For lightshow synchronization. Times are pulse anchors/interpolated,
@@ -613,7 +597,15 @@ function makeNotes(context, rhythm, profile, level, controls, walls, retainedTim
     { time: -Infinity, direction: undefined, hits: 0 },
   ];
   const { seed, density, intensity, style } = controls;
+  const motion = profile.motion;
   const proposed = chooseRhythm(context, rhythm, profile, level, density);
+  const proposedTimes = new Set(proposed.map(event=>event.time));
+  // A larger detail vocabulary must add to the established groove. Ranking
+  // 32nd phases must not evict a coarser phase from the preceding difficulty.
+  for(const event of rhythm.events)if(retainedTimes.has(event.time)&&!proposedTimes.has(event.time)) {
+    proposed.push(event);proposedTimes.add(event.time);
+  }
+  proposed.sort((a,b)=>a.time-b.time);
   const admissible = rhythm.mode === 'percussion-groove' ? [] : proposed;
   if (rhythm.mode === 'percussion-groove') {
     const ranked = [...proposed].sort((a,b) => Number(b.primary)-Number(a.primary) || Number(retainedTimes.has(b.time))-Number(retainedTimes.has(a.time)) || Number(a.melodic)-Number(b.melodic) || b.strength*b.confidence-a.strength*a.confidence || a.time-b.time);
@@ -656,13 +648,12 @@ function makeNotes(context, rhythm, profile, level, controls, walls, retainedTim
     // The seed chooses the vocabulary for a rhythmic signature once. It has
     // no influence on which sounds become notes or their rhythm.
     const motif =
-      (seedNumber(signature) + seed + styleShift + (level === 4 ? 1 : 0)) %
+      (seedNumber(signature) + seed + styleShift + Math.max(0, motion - 2)) %
       lanePhrases.length;
     const nextGap = (selected[index + 1]?.time ?? Infinity) - time;
     const previousGap = time - lastHitTime;
     const accentedRole = event.kind === "kick" || event.kind === "snare";
     const double =
-      level >= 2 &&
       event.impact &&
       accentedRole &&
       energy > 0.42 &&
@@ -671,14 +662,12 @@ function makeNotes(context, rhythm, profile, level, controls, walls, retainedTim
       available(1) &&
       previousGap >= profile.handGap &&
       nextGap >= profile.handGap &&
-      (level === 4 ||
-        (level === 3 ? event.bar % 2 === 0 : event.bar % 4 === 0));
+      event.bar % profile.doubleEveryBars === 0;
     const activeHands = double ? [0, 1] : [hand];
     for (const color of activeHands) {
       const state = hands[color];
       const down = state.hits % 2 === 0;
-      let inner = level === 0 || !!lanePhrases[motif][slot % 8];
-      if (level === 1) inner = style !== "dance" || event.kind !== "snare";
+      let inner = !!lanePhrases[motif][slot % 8];
       if (style === "cinematic" && !event.impact) inner = false;
       let x = color === 0 ? (inner ? 1 : 0) : inner ? 2 : 3;
       if (wallAt(walls, beat, x, (context.bpm / 60) * 0.25)) {
@@ -688,9 +677,9 @@ function makeNotes(context, rhythm, profile, level, controls, walls, retainedTim
       // Pitch is not inferred from energy. Height expresses a clear musical
       // role: low kicks stay low; stronger high responses can rise.
       let y = 0;
-      if (level >= 2 && !inner && event.kind === "snare") y = 1;
+      if (!inner && event.kind === "snare") y = 1;
       if (
-        level >= 3 &&
+        motion >= 3 && time - state.time >= .35 &&
         !down &&
         inner &&
         event.kind !== "kick" &&
@@ -698,11 +687,11 @@ function makeNotes(context, rhythm, profile, level, controls, walls, retainedTim
         slot % 4 === 3
       )
         y = 2;
+      if (motion >= 5 && !down && !inner && event.kind !== 'kick' && slot % 4 === 1 && time - state.time >= .35) y = 2;
       const diagonal =
-        level >= 2 &&
         !double &&
         !inner &&
-        (event.kind === "snare" || (level >= 3 && slot % 4 === 2)) &&
+        (event.kind === "snare" || (motion >= 3 && slot % 4 === 2)) &&
         intensity > 0.35;
       const sign = down ? (color === 0 ? -1 : 1) : color === 0 ? 1 : -1;
       const direction = chooseDirection(state.direction, down, diagonal, sign);
@@ -887,7 +876,7 @@ export function generateMaps(
       level,
       controls,
       obstacles,
-      level>=3 ? new Set(maps[DIFFICULTIES[level-1]].notes.map(note=>note.sourceTime)) : new Set(),
+      level > 0 ? new Set(maps[DIFFICULTIES[level-1]].notes.map(note=>note.sourceTime)) : new Set(),
     );
     const bombNotes = makeBombs(context, notes, obstacles, level, controls);
     const events = makeLights(context, controls, bombNotes);
@@ -904,7 +893,9 @@ export function generateMaps(
       duration: context.duration,
       difficulty,
       generation: {
-        version: 3,
+        version: 4,
+        difficultyCalibration: 'full-groove-baseline',
+        detailBudget: profile.detailBudget,
         timingSource: `${rhythm.pulse.source}-pulse${rhythm.pulse.smoothed ? "-fit" : ""}`,
         acousticEvents: context.onsets.length,
         rhythmicSignatures: rhythm.signatures,
