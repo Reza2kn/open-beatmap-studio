@@ -130,3 +130,9 @@ Compared against an independently generated Demucs-stem attack reference over se
 A compact full-mixture drum classifier and a small E-GMD drum transcription network were also investigated privately. The former has unresolved explicit checkpoint licensing/recall limitations; the latter is trained on isolated drums and performed poorly on this mixture. Neither is bundled or silently substituted for a verified model.
 
 All 120 Node tests pass, including the private real-song comparisons and a regression that fast mode creates only the beat worker and preserves DSP attack timestamps. The production build passes.
+
+## Compact workspace without reducing type — 2026-10-16
+
+At the normal 1280×720 browser viewport, the prior full-song page measured 3,242 px tall. The compact workspace measures 1,372 px with the same supplied full recording loaded: approximately 52.5% of the page is visible at once instead of 22.2%. The page-top view includes Generate, Export, the full preview, playback, Mouse practice and timing-click controls. Body labels remain 24 px, help 22 px, difficulty controls 24 px and the main heading 61.952 px at this viewport.
+
+Track and Map & lights panels now use accessible tabs with arrow/Home/End navigation. Generate is available above either panel. Metadata/trimming, detailed lighting and analysis controls expand on demand; their input values remain mounted and persist across tab switches. Upload, panel padding, toolbar spacing, the responsive stage height and the timeline cue strip were compacted. The cue strip scrolls horizontally instead of growing many rows. Browser checks covered tab click/keyboard navigation, retained choreography settings, opening lighting/analysis controls, the full reference-song neural upload and 390/1024-pixel layouts without horizontal page overflow. The actual full-song run still completed in 9.1 seconds on this device. All 120 Node tests pass.

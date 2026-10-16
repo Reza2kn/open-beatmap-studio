@@ -23,6 +23,8 @@ npm run preview
 
 ## What works
 
+Track editing and map/light direction use separate control tabs. Generate remains at the top of either tab; details, trimming, lighting and audio-analysis options expand when needed. The preview adapts to screen height while preserving the larger text.
+
 - Browser audio decoding/trimming, harmonic-percussive median separation, refined transient attacks, approximate constant BPM/phase, RMS energy and sixteen-beat phrase windows.
 - Editable BPM/grid offset, half/double tempo controls, deterministic seeds, density, four choreography styles, optional walls/bombs/lighting.
 - Easy, Normal, Hard, Expert and Expert+ Standard maps that prioritize repeated kick/snare grooves, use rhythmic melodic attacks in drumless passages, repeat movement phrases and simplify the same groove across difficulty profiles, with hand alternation, parity and hazard-clearance safeguards. Difficulty names are generated profiles, not ranked-map certification.
