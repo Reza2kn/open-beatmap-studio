@@ -19,8 +19,15 @@ export async function importYouTube(request,{createClient,fetcher=fetch}={}){
     const text=await request.text();if(text.length>4096)return jsonError('The URL is too long.');
     const id=parseYouTubeUrl(JSON.parse(text).url);
     const signal=AbortSignal.any([request.signal,AbortSignal.timeout(120000)]);
-    const client=await (createClient??(options=>Innertube.create(options)))({retrieve_player:false,enable_session_cache:false,fetch:(input,init)=>fetcher(input,{...init,signal})});
-    const info=await client.getBasicInfo(id,{client:'VISIONOS'});
+    const client=await (createClient??(options=>Innertube.create(options)))({client_type:'VISIONOS',retrieve_player:false,enable_session_cache:false,fetch:(input,init)=>fetcher(input,{...init,signal})});
+    let info;
+    for(const kind of ['VISIONOS','ANDROID_VR']){
+      info=await client.getBasicInfo(id,{client:kind});
+      const status=info.playability_status?.status;
+      if((!status||status==='OK')&&Number.isFinite(Number(info.basic_info?.duration)))break;
+      console.warn('youtube_import_playability',JSON.stringify({client:kind,status:status||'MISSING_VIDEO_DETAILS',reason:String(info.playability_status?.reason||'').slice(0,180)}));
+    }
+    if(info.playability_status?.status&&info.playability_status.status!=='OK')return jsonError('YouTube is refusing this video from the studio hosting network. Try importing an audio file.',422);
     const details=info.basic_info,duration=Number(details.duration);
     if(details.is_live||details.is_upcoming||!Number.isFinite(duration)||duration<5||duration>600)return jsonError('Choose a public video between 5 seconds and 10 minutes.');
     let container='webm',format;
