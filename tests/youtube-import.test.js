@@ -38,3 +38,20 @@ test('a lazy CDN failure is returned as JSON rather than false download success 
   const response=await importYouTube(request(),{createClient:client({failure:true})});
   assert.equal(response.status,422);const text=await response.text();assert.ok(!text.includes('secret'));assert.match(text,/YouTube could not import/);
 });
+test('a denied player response is reported as an upstream refusal rather than an invalid song duration',async()=>{
+  const tried=[];
+  const response=await importYouTube(request(),{createClient:async options=>{
+    assert.equal(options.fail_fast,true);
+    return{getBasicInfo:async(_,config)=>{tried.push(config.client);return{basic_info:{},playability_status:{status:'LOGIN_REQUIRED',reason:'Sign in to confirm you are not a bot'}};}};
+  }});
+  assert.deepEqual(tried,['VISIONOS','ANDROID_VR']);assert.equal(response.status,422);
+  assert.match((await response.json()).error,/hosting network/);
+});
+test('a second anonymous client can supply a valid stream after the first metadata response is denied',async()=>{
+  const createClient=async options=>{
+    const real=await client()(options),good=await real.getBasicInfo(id,{client:'VISIONOS'});
+    return{getBasicInfo:async(_,config)=>config.client==='VISIONOS'?{basic_info:{},playability_status:{status:'LOGIN_REQUIRED'}}:good};
+  };
+  const response=await importYouTube(request(),{createClient});assert.equal(response.status,200);
+  assert.equal((await response.arrayBuffer()).byteLength,5);
+});

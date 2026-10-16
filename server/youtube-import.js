@@ -19,12 +19,12 @@ export async function importYouTube(request,{createClient,fetcher=fetch}={}){
     const text=await request.text();if(text.length>4096)return jsonError('The URL is too long.');
     const id=parseYouTubeUrl(JSON.parse(text).url);
     const signal=AbortSignal.any([request.signal,AbortSignal.timeout(120000)]);
-    const client=await (createClient??(options=>Innertube.create(options)))({client_type:'VISIONOS',retrieve_player:false,enable_session_cache:false,fetch:(input,init)=>fetcher(input,{...init,signal})});
+    const client=await (createClient??(options=>Innertube.create(options)))({client_type:'VISIONOS',fail_fast:true,retrieve_player:false,enable_session_cache:false,fetch:(input,init)=>fetcher(input,{...init,signal})});
     let info;
     for(const kind of ['VISIONOS','ANDROID_VR']){
       info=await client.getBasicInfo(id,{client:kind});
       const status=info.playability_status?.status;
-      if((!status||status==='OK')&&Number.isFinite(Number(info.basic_info?.duration)))break;
+      if(!status||status==='OK')break;
       console.warn('youtube_import_playability',JSON.stringify({client:kind,status:status||'MISSING_VIDEO_DETAILS',reason:String(info.playability_status?.reason||'').slice(0,180)}));
     }
     if(info.playability_status?.status&&info.playability_status.status!=='OK')return jsonError('YouTube is refusing this video from the studio hosting network. Try importing an audio file.',422);
@@ -54,6 +54,7 @@ export async function importYouTube(request,{createClient,fetcher=fetch}={}){
     return new Response(body,{headers:{'Content-Type':type,'Cache-Control':'private, no-store','X-Track-Title':encodeURIComponent(details.title||'YouTube track'),'X-Track-Duration':String(duration),'X-Audio-Extension':type==='audio/mp4'?'m4a':type==='audio/webm'?'webm':'ogg',...(length?{'Content-Length':String(length)}:{})}});
   }catch(error){
     if(error.name==='AbortError')return jsonError('Import cancelled.',499);
+    console.warn('youtube_import_failed',String(error.message||'Unknown upstream error').replace(/https?:\/\/\S+/g,'[upstream URL]').slice(0,180));
     // Do not expose upstream signed URLs, cookies or extraction internals.
     const message=/^(Paste |Use a |Choose a |The URL|The audio|This video|YouTube |The audio host)/.test(error.message)?error.message:'YouTube could not import this public video. It may be restricted or temporarily unavailable.';
     return jsonError(message,422);
