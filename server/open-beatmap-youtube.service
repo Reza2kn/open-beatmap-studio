@@ -1,0 +1,23 @@
+[Unit]
+Description=Open Beatmap Studio audio download origin
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+EnvironmentFile=%h/.config/open-beatmap-studio/youtube.env
+ExecStart=/usr/bin/python3 %h/.local/share/open-beatmap-studio/youtube-relay.py
+Restart=on-failure
+RestartSec=3
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=read-only
+MemoryMax=384M
+CPUQuota=100%
+TasksMax=24
+LimitNOFILE=128
+LimitFSIZE=104857600
+
+[Install]
+WantedBy=default.target

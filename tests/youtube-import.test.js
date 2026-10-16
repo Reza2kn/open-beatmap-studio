@@ -55,3 +55,23 @@ test('a second anonymous client can supply a valid stream after the first metada
   const response=await importYouTube(request(),{createClient});assert.equal(response.status,200);
   assert.equal((await response.arrayBuffer()).byteLength,5);
 });
+test('the owned download origin receives only a validated ID and a server credential',async()=>{
+  let called=0;
+  const fetcher=async(url,init)=>{
+    called++;assert.equal(String(url),'https://origin.test/audio');
+    assert.equal(init.headers.Authorization,'Bearer server-only');
+    assert.equal(init.headers.Cookie,undefined);assert.equal(init.headers.Origin,undefined);
+    assert.deepEqual(JSON.parse(init.body),{videoId:id});
+    return new Response(new Uint8Array([1,2,3]),{headers:{'Content-Type':'audio/webm','Content-Length':'3','X-Track-Duration':'196','X-Track-Title':encodeURIComponent('Song / 演奏')}});
+  };
+  const response=await importYouTube(request(),{relayUrl:'https://origin.test',relaySecret:'server-only',fetcher,createClient:()=>{throw new Error('Hosted origin must not invoke the refused network');}});
+  assert.equal(response.status,200);assert.equal(called,1);assert.equal((await response.arrayBuffer()).byteLength,3);
+  assert.equal(decodeURIComponent(response.headers.get('X-Track-Title')),'Song / 演奏');
+  assert.equal(response.headers.get('Authorization'),null);
+});
+test('origin authentication failures and invalid audio do not become false download success',async()=>{
+  for(const upstream of [new Response('private credential rejected',{status:401}),new Response('not audio',{headers:{'Content-Type':'text/html','Content-Length':'9','X-Track-Duration':'196'}})]){
+    const response=await importYouTube(request(),{relayUrl:'https://origin.test',relaySecret:'server-only',fetcher:async()=>upstream});
+    assert.equal(response.status,422);const text=await response.text();assert.ok(!text.includes('private credential'));assert.ok(!text.includes('server-only'));
+  }
+});
