@@ -1,10 +1,11 @@
 import {runNeuralJob} from './neural-job.js';
 import {analyzeNeuralBeats} from './neural-beat.js';
-export async function analyzeBrowserNeural(buffer,{onProgress=()=>{},signal,backend='auto'}={}){
+export async function analyzeBrowserNeural(buffer,{onProgress=()=>{},signal,backend='auto',separateDrums=true}={}){
   const started=performance.now();
   // The two models run in separate, short-lived workers, sequentially to bound RAM.
   const beats=await analyzeNeuralBeats(buffer,{onProgress,signal,backend});
   signal?.throwIfAborted();
+  if(!separateDrums)return {...beats,model:{...beats.model,profile:'neural-pulse+browser-dsp'},elapsedSeconds:(performance.now()-started)/1000};
   onProgress({stage:'Preparing stereo for neural drum separation',progress:0});
   const rate=44100,offline=new OfflineAudioContext(2,Math.ceil(buffer.duration*rate),rate);
   const source=offline.createBufferSource();source.buffer=buffer;source.connect(offline.destination);source.start();

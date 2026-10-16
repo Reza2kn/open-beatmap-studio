@@ -118,3 +118,15 @@ Typography was enlarged about 2.2 times, with 18 px minimum visible explicit tex
 The Node suite passes 119 tests, including runtime transport integrity, ordered model-shard reconstruction, model math/parity, fresh-worker fallback/cancellation, mouse geometry/input, existing gameplay/export/audio regressions and the private song fixture. Source build passes. Published-route checks are recorded after deployment below.
 
 Explicit CPU neural mode was also exercised through the production browser build on a five-second excerpt: both learned models completed on WASM in 16 seconds and produced the same seven Hard hit times as the GPU excerpt run. Cancellation restored the loaded track for retry; the unit regression also verifies that cancellation never launches an unwanted CPU retry.
+
+## v0.5 fast default after latency feedback — 2026-10-16
+
+The user set a cached full-song generation target below ten seconds. The default now runs Beat This! small0 plus browser DSP attacks, with full HTDemucs separation explicitly optional. Actual production-browser upload of the same 195.86-second MP3 completed in **9.1 seconds total** (file decode through five maps/native lighting), reporting **Beats: WebGPU · Drums: DSP**. ZIP encoding/download took a further 3.2 seconds. First-use downloads and CPU/other hardware are outside this single cached WebGPU result.
+
+The downloaded fast ZIP passed static validation with zero errors/warnings. Easy through Expert+ contain 556/584/679/689/698 note objects and 548/569/629/629/629 distinct hit times. Each difficulty contains 6,796 native color/rotation groups. Expert profiles can add movement/double notes after supported acoustic timing density saturates; extra subdivisions are not invented to inflate counts.
+
+Compared against an independently generated Demucs-stem attack reference over seconds 22–188, actual Hard ZIP hit times cover 99.2% (fast) / 99.6% (full) of the stronger half of stem attacks within 50 ms. All-hit agreement is 71.1% / 74.4%, with median nearest-stem distances 7.3 / 0.03 ms. These all-hit comparisons include melodic and pulse notes against a drum-only reference; they are not a drum precision/false-positive measurement or human annotation. The fast mode retains the same learned pulse while trading stem isolation for latency; it is not presented as a quality upgrade over full separation.
+
+A compact full-mixture drum classifier and a small E-GMD drum transcription network were also investigated privately. The former has unresolved explicit checkpoint licensing/recall limitations; the latter is trained on isolated drums and performed poorly on this mixture. Neither is bundled or silently substituted for a verified model.
+
+All 120 Node tests pass, including the private real-song comparisons and a regression that fast mode creates only the beat worker and preserves DSP attack timestamps. The production build passes.
