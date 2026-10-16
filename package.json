@@ -6,7 +6,7 @@
   "description": "Browser-first open source Beat Saber map generator",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
-    "build": "vite build",
+    "build": "node tools/build.mjs",
     "preview": "vite preview --host 127.0.0.1",
     "test": "node --test tests/*.test.js",
     "bridge": "node server/bridge.mjs",
