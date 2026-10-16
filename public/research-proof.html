@@ -1,0 +1,12 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Private YouTube browser attestation proof</title>
+<style>body{font:16px/1.5 system-ui;max-width:850px;margin:48px auto;padding:0 24px;background:#10131b;color:#e7eaf2}h1{font-size:28px}label{display:block;margin:20px 0}input,select,button{font:inherit;padding:10px;color:inherit;background:#202635;border:1px solid #64718c;border-radius:5px}input{width:170px}button{cursor:pointer;margin-right:12px}button:disabled{opacity:.4;cursor:default}pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#191f2c;padding:18px;min-height:150px}.muted{color:#aeb9ce}strong{color:#95d7bf}</style>
+<h1>Private browser attestation proof</h1>
+<p>This isolated research page runs Google's challenge in this browser using BgUtils 4.0.3. No account, cookies or personal API key. After minting, it tests the studio importer and reports complete audio byte count.</p>
+<label>Public video ID <input id="video" value="206atvk4uyE" maxlength="11" autocomplete="off"></label>
+<label>Challenge service <select id="service"><option value="google">Google WAA directly</option><option value="youtube">YouTube WAA directly</option></select></label>
+<button id="run">Test browser proof and hosted download</button><button id="download" disabled>Download private token JSON</button>
+<p class="muted">The result panel contains metadata only. The generated proof stays in memory until you download it or close/reload this page. Do not share its JSON publicly.</p>
+<pre id="status" role="status">Ready. Click Test browser proof and hosted download.</pre>
+<script type="module" src="/research-proof.js"></script></html>

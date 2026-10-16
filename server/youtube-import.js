@@ -17,13 +17,15 @@ export async function importYouTube(request,{createClient,fetcher=fetch}={}){
   if(!(request.headers.get('content-type')||'').startsWith('application/json')||Number(request.headers.get('content-length')||0)>4096)return jsonError('Expected a video URL.',400);
   try{
     const text=await request.text();if(text.length>4096)return jsonError('The URL is too long.');
-    const id=parseYouTubeUrl(JSON.parse(text).url);
+    const input=JSON.parse(text),id=parseYouTubeUrl(input.url);
+    const proof=typeof input.proof==='string'&&/^[A-Za-z0-9_=-]{16,1024}$/.test(input.proof)?input.proof:null;
     const signal=AbortSignal.any([request.signal,AbortSignal.timeout(120000)]);
     const client=await (createClient??(options=>Innertube.create(options)))({client_type:'VISIONOS',fail_fast:true,retrieve_player:false,enable_session_cache:false,fetch:(input,init)=>fetcher(input,{...init,signal})});
     let info;
-    for(const kind of ['VISIONOS','ANDROID_VR']){
-      info=await client.getBasicInfo(id,{client:kind});
+    for(const kind of proof?['WEB']:['VISIONOS','ANDROID_VR']){
+      info=await client.getBasicInfo(id,{client:kind,...(proof?{po_token:proof}:{})});
       const status=info.playability_status?.status;
+      if(proof)console.warn('youtube_import_browser_proof',JSON.stringify({status:status||'MISSING',formats:info.streaming_data?.adaptive_formats?.length||0,sabr:Boolean(info.streaming_data?.server_abr_streaming_url)}));
       if(!status||status==='OK')break;
       console.warn('youtube_import_playability',JSON.stringify({client:kind,status:status||'MISSING_VIDEO_DETAILS',reason:String(info.playability_status?.reason||'').slice(0,180)}));
     }
