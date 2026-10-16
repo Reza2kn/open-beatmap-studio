@@ -38,10 +38,13 @@ Browser pulse mode needs no downloads. For learned drum separation and tracking,
 
 ```sh
 npm run model:setup
+npm run build
 npm run bridge
 ```
 
-In **Beat tracker**, choose **Local neural drums + beats**, expand **Beat tracker setup**, paste the temporary companion key, then generate. The browser sends the trimmed audio as mono PCM to your own authenticated `127.0.0.1` companion. No hosted inference is involved. Setup requires Python 3.10–3.13 (Python 3.12 recommended), installs an isolated `.model-venv`, and downloads weights to ignored `.model-cache`. The Python/PyTorch runtime is substantially larger than the roughly 8.1 MB beat tracker and 80 MB drum separator checkpoints. Neural separation can take a few minutes per song on a CPU. Model predictions are estimates, especially in breaks and ambiguous meter; they are not manual beat annotations.
+Open **http://127.0.0.1:4174/connect**, click **Connect & open studio**, and upload your song in that local studio. Neural mode is selected automatically. Its authenticated browser session survives reloads without copying a key. Keep the companion terminal running. The hosted site's **Open local neural studio** link leads to the same connection page; an optional pasted-key connection remains available for advanced hosted use.
+
+The browser sends the trimmed audio as mono PCM to your own authenticated `127.0.0.1` companion. No hosted inference is involved. Setup requires Python 3.10–3.13 (Python 3.12 recommended), installs an isolated `.model-venv`, and downloads weights to ignored `.model-cache`. The Python/PyTorch runtime is substantially larger than the roughly 8.1 MB beat tracker and 80 MB drum separator checkpoints. Neural separation can take a few minutes per song on a CPU. Model predictions are estimates, especially in breaks and ambiguous meter; they are not manual beat annotations.
 
 The arranger uses the pulse as a timing reference, then selects audible instrument attacks. Separated kick/snare patterns form the main groove; aligned melodic attacks lead in drumless passages. The difficulty scale starts with the former Hard groove as its Easy baseline. Normal through Expert+ progressively admit supported detail and increase movement complexity and speed. Extra notes require acoustic evidence; a song with few distinct sounds can reach a timing-density ceiling before Expert+. Simultaneous two-saber notes still produce one click. Browser HPSS is an approximate transient separator and can confuse vocals or piano with drums; the local neural path uses an actual learned drum stem. Each percussion band refines timing on its own filtered signal so nearby louder sounds do not steal the attack time. The seed changes movement rather than rhythm. The same rhythmic events also direct lightshow accents. A browser-only ONNX port is not yet implemented.
 

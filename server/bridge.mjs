@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { pathToFileURL } from "node:url";
 import { existsSync } from "node:fs";
+import { createLocalStudio } from './local-studio.mjs';
 const localDownloader = join(
   process.cwd(),
   ".venv",
@@ -86,9 +87,13 @@ export function createBridge({
   token = randomBytes(24).toString("hex"),
   allowedOrigin = "https://open-beatmap-studio.frostymoose128.chatgpt.site",
   analyze = runBeatModel,
+  studioDirectory,
 } = {}) {
   let active = false;
+  const studio = createLocalStudio({directory:studioDirectory});
   const server = http.createServer(async (req, res) => {
+    try { if (await studio.handle(req,res)) return; }
+    catch { if(!res.headersSent)res.writeHead(400);res.end('The local request could not be completed.');return; }
     const origin = req.headers.origin || "";
     const local = /^https?:\/\/(127\.0\.0\.1|localhost)(:\d+)?$/.test(origin);
     if (origin && origin !== allowedOrigin && !local) {
@@ -117,7 +122,7 @@ export function createBridge({
       res.writeHead(status, { "Content-Type": "application/json" });
       res.end(JSON.stringify(data));
     };
-    if (auth.length !== expected.length || !timingSafeEqual(auth, expected)) {
+    if (!(auth.length === expected.length && timingSafeEqual(auth, expected)) && !studio.authenticated(req)) {
       json(401, {
         error:
           "Invalid bridge key. Copy the temporary key from npm run bridge.",
@@ -244,6 +249,7 @@ if (
   const { server, token } = createBridge();
   server.listen(4174, "127.0.0.1", () => {
     console.log("Open Beatmap local companion: http://127.0.0.1:4174");
+    console.log("Open the local neural studio: http://127.0.0.1:4174/connect");
     console.log("Temporary companion key (paste into Beat tracker or YouTube):");
     console.log(token);
     console.log(

@@ -2,6 +2,12 @@
 
 2026-10-15, initial release. These are measured implementation checks, not a claim of ranked-map quality or headset certification.
 
+## v0.4.1: local connection instead of per-tab key copying
+
+The user's hosted tab remained disconnected after an agent populated a different tab's input. That did not fix the user's connection. The companion now serves the built studio itself at `/studio/`, preceded by a local `/connect` form. A single-use form nonce and exact local Origin check establish an HttpOnly, SameSite=Strict session. Reloads use that session; neither the bearer key nor session credential is placed in page JavaScript or a URL. A restart requires reconnecting. Model/import endpoints remain authenticated, and another origin cannot borrow the local cookie.
+
+The hosted UI exposes **Open local neural studio** and a visible connection status. Generating without a hosted key opens actionable connection instructions before analysis instead of throwing the former empty-key error. Local studio selects neural mode and uses its authenticated session. A bounded health check precedes neural inference so unreachable companions fail with a connection action rather than entering a long inference wait. Tests cover pairing, reload authentication, model POST, unauthorized requests, nonce replay, other-origin cookie rejection and file-path containment.
+
 ## v0.4.0: timing defects and difficulty recalibration
 
 The user still found v0.3.1 partially off beat and requested that its Hard become the new Easy baseline. Earlier structural checks and model-agreement figures did not settle that listening complaint.

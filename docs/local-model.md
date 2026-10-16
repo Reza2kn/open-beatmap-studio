@@ -8,12 +8,15 @@ The authors provide beat/downbeat inference, CPU operation, small checkpoints of
 
 ```sh
 npm run model:setup
+npm run build
 npm run bridge
 ```
 
 Setup creates an isolated `.model-venv` with Python 3.12 when `uv` is available, or an installed Python 3.10–3.13 otherwise. `BEATMAP_MODEL_PYTHON` can select an interpreter. It installs pinned `beat-this==1.1.0`, `demucs==4.0.1`, `torch==2.8.0` and matching `torchaudio==2.8.0`; Windows/Linux setup selects PyTorch's official CPU wheel index before installing remaining packages. The Python runtime requires several hundred MB depending on platform; weight downloads add about 8.5 MB for small0 and 84 MB for htdemucs.
 
 Setup explicitly downloads the official checkpoints into ignored `.model-cache/` and verifies their pinned SHA-256 hashes. small0: `6074be2c4d490c5f6101fcc374a1ec72ae93456e23bb6019783b849f5dc7d47b`; htdemucs: `8726e21a993978c7ba086d3872e7608d7d5bfca646ca4aca459ffda844faa8b4`. Normal inference requires cached checkpoints and makes no network calls. Audio, PCM and estimated stems remain in memory and are never written by the production script. Only initial package/weight installation requires an internet connection.
+
+For the browser UI, open `http://127.0.0.1:4174/connect` and use **Connect & open studio**. The companion serves the build from `dist/` and establishes a same-origin, HttpOnly session through a single-use local form. Neural mode is selected automatically; reloads retain the connection for that browser session. Model APIs still require either this local session or an explicit bearer key. The hosted frontend offers the local-studio link and retains optional manual bearer authentication; it does not receive the cookie session. A companion restart invalidates sessions. The Python CLI below is unchanged.
 
 ```sh
 # JSON readiness check; does not load the model or analyze audio.
