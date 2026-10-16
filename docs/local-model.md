@@ -1,5 +1,7 @@
 # Local learned beat analysis
 
+> Legacy optional Python helper: the default v0.5 neural mode now runs entirely in the browser. No setup below is needed for uploaded-file mapping. See [browser neural mode](browser-neural.md).
+
 `server/beat-model.py` runs **Beat This! small0** on the user's CPU and can also run **htdemucs learned drum separation** with `--separate-drums`. Beat timestamps/probabilities come from the beat model; drum-hit events come from waveform attacks in the independently estimated drum stem. The fitted constant BPM is a coordinate system for export, not a replacement for those event times.
 
 The authors provide beat/downbeat inference, CPU operation, small checkpoints of about 8.1 MB and main checkpoints of about 78 MB. Their code and released weights are MIT licensed. Their documented implementation is Python/PyTorch; the browser port described below is not shipped. [Official project](https://github.com/CPJKU/beat_this).

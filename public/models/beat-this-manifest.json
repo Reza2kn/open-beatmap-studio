@@ -1,0 +1,49 @@
+{
+  "id": "beat-this-small0",
+  "name": "Beat This! small0",
+  "license": "MIT",
+  "source": "https://github.com/CPJKU/beat_this",
+  "checkpointSha256": "6074be2c4d490c5f6101fcc374a1ec72ae93456e23bb6019783b849f5dc7d47b",
+  "sampleRate": 22050,
+  "fftSize": 1024,
+  "hopLength": 441,
+  "melBins": 128,
+  "melFile": "beat-this-mel.f32",
+  "melShape": [
+    513,
+    128
+  ],
+  "window": "hann-periodic",
+  "centerPadding": "reflect",
+  "normalization": "frame_length",
+  "power": 1,
+  "logMultiplier": 1000,
+  "chunkFrames": 1500,
+  "borderFrames": 6,
+  "overlapMode": "keep_first",
+  "opset": 17,
+  "validation": [
+    {
+      "frames": 100,
+      "maxAbsLogitError": 3.337860107421875e-06
+    },
+    {
+      "frames": 511,
+      "maxAbsLogitError": 4.0531158447265625e-06
+    },
+    {
+      "frames": 1500,
+      "maxAbsLogitError": 1.0251998901367188e-05
+    }
+  ],
+  "files": {
+    "beat-this-small0.onnx": {
+      "bytes": 9491837,
+      "sha256": "24cb46a60349ab3efc75590100d1af72f59580a02516bfb4087294088b840bf8"
+    },
+    "beat-this-mel.f32": {
+      "bytes": 262656,
+      "sha256": "57cf87a6ccce2c80898823c13ce260ec5a43b957c0671cfd9233d269f8dc14f2"
+    }
+  }
+}

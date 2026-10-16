@@ -8,7 +8,8 @@ import "@fontsource/dm-sans/600.css";
 import "@phosphor-icons/web/regular";
 import "./style.css";
 import { analyzeAudio, retimeAnalysis } from "./audio.js";
-import { applyBeatModel, trackBeatsLocally, checkLocalCompanion, isLocalNeuralStudio, LOCAL_STUDIO_URL } from "./beat-model.js";
+import { applyBeatModel, checkLocalCompanion, isLocalNeuralStudio } from "./beat-model.js";
+import { analyzeBrowserNeural } from "./neural-audio.js";
 import { generateMaps, validateGameplay, getRhythmAnchors } from "./generator.js";
 import { buildMapFiles, validateMapFiles, createMapZip } from "./export.js";
 import {
@@ -35,18 +36,18 @@ document.querySelector("#app").innerHTML = `
 <details class="metadata"><summary>Track details ${icon("caret-down")}</summary><label for="title">Song title</label><input id="title" value="Afterglow Circuit" maxlength="120"><label for="artist">Artist</label><input id="artist" value="Open Beatmap Studio" maxlength="120"><label for="mapper">Mapper</label><input id="mapper" value="Open Beatmap" maxlength="120"><label for="cover">Cover art (optional)</label><input id="cover" type="file" accept="image/png,image/jpeg,image/webp"></details>
 <div class="trim-row"><label for="trim-start">Trim start <span>seconds</span><input id="trim-start" type="number" min="0" step="0.1" value="0"></label><span class="trim-divider">→</span><label for="trim-end">Trim end <span>seconds</span><input id="trim-end" type="number" min="5" step="0.1" value="60"></label></div>
 </section>
-<section class="generation-section"><div class="section-heading"><h2>Make it yours</h2><span class="subtle">All 5 difficulties</span></div><label class="field-label" for="style">Choreography</label><div class="select-wrap"><select id="style"><option value="flow">Flow · smooth & musical</option><option value="dance">Dance · wide & rhythmic</option><option value="technical">Technical · more variation</option><option value="cinematic">Cinematic · dramatic phrases</option></select></div><div class="slider-label"><label for="density">Note density</label><output id="density-output">65%</output></div><input id="density" type="range" min="0.15" max="1" step="0.05" value="0.65"><div class="range-ends"><span>Room to breathe</span><span>Keep me moving</span></div>
+<section class="generation-section"><div class="section-heading"><h2>Make it yours</h2><span class="subtle">All 5 difficulties</span></div><label class="field-label" for="style">Choreography</label><div class="select-wrap"><select id="style"><option value="flow">Flow · smooth</option><option value="dance">Dance · rhythmic</option><option value="technical">Technical · varied</option><option value="cinematic">Cinematic · dramatic</option></select></div><div class="slider-label"><label for="density">Note density</label><output id="density-output">65%</output></div><input id="density" type="range" min="0.15" max="1" step="0.05" value="0.65"><div class="range-ends"><span>Room to breathe</span><span>Keep me moving</span></div>
 <div class="toggle-row"><span>${icon("wall")} Walls</span><label class="switch"><input type="checkbox" id="walls" checked><span></span><span class="sr-only">Generate walls</span></label></div><div class="toggle-row"><span>${icon("bomb")} Bombs</span><label class="switch"><input type="checkbox" id="bombs" checked><span></span><span class="sr-only">Generate bombs</span></label></div><div class="toggle-row"><span>${icon("lightbulb")} Rhythm lighting</span><label class="switch"><input type="checkbox" id="lights" checked><span></span><span class="sr-only">Generate lighting events</span></label></div>
 <details class="light-controls" open><summary>Lightshow director <span>NATIVE</span></summary><p class="light-caption">Spatial color waves · rotating beam fans · beat accents</p><div class="slider-label"><label for="light-intensity">Brightness</label><output id="light-intensity-output">70%</output></div><input id="light-intensity" type="range" min="0.1" max="1" step="0.05" value="0.7"><div class="slider-label"><label for="light-motion">Beam motion</label><output id="light-motion-output">65%</output></div><input id="light-motion" type="range" min="0" max="1" step="0.05" value="0.65"><p class="help">Bass pulses. Percussion accents. Phrase builds. No rapid strobe mode.</p></details><details class="advanced"><summary>Timing & advanced ${icon("sliders-horizontal")}</summary><div class="two-fields"><label for="bpm">Tempo (BPM)<input id="bpm" type="number" min="40" max="300" step="0.001" value="128"></label><label for="offset">Grid offset (s)<input id="offset" type="number" min="-5" max="5" step="0.01" value="0"></label></div><label for="seed">Pattern seed<input id="seed" type="number" value="42" min="0" max="4294967295"></label><button id="half-bpm" class="text-button">½ tempo</button><button id="double-bpm" class="text-button">2× tempo</button><p class="help" id="confidence">Tempo estimates need a listening check.</p></details>
-<label class="field-label" for="beat-engine">Beat tracker</label><select id="beat-engine"><option value="browser">Browser pulse · no download</option><option value="learned">Local neural drums + beats</option></select><p class="help" id="companion-status" role="status">Browser analysis · no connection needed.</p><details id="model-controls"><summary>Beat tracker setup</summary><a class="secondary full" id="open-local-studio" href="${LOCAL_STUDIO_URL}" target="_blank" rel="noopener">Open local neural studio ${icon("arrow-up-right")}</a><p class="help" id="local-studio-help">Connect once in the local studio, then upload your song there. No key to copy.</p><div id="manual-companion-key"><label for="model-key">Companion key (advanced hosted connection)</label><input id="model-key" type="password" autocomplete="off" placeholder="Optional: key from npm run bridge"></div><p class="help">Learned drum separation runs on your computer. <button class="inline-link" id="model-guide">Install & connect</button></p></details>
+<label class="field-label" for="beat-engine">Audio analysis</label><select id="beat-engine"><option value="learned" selected>Neural drums + beats</option><option value="browser">Browser pulse · fast</option></select><label class="field-label" for="neural-device">Neural hardware</label><select id="neural-device"><option value="auto">WebGPU · auto</option><option value="wasm">CPU · WebAssembly</option></select><p class="help" id="model-status" role="status">Neural mode runs here. First use downloads ~140 MB of reusable models and runtime. Your song stays in this tab.</p><p id="model-fallback" class="help" role="status" hidden></p><details id="model-controls"><summary>About neural analysis</summary><p class="help">Beat This! small0 finds the musical pulse. HTDemucs separates drums, instruments and vocals. Both run on this device in browser workers. WebGPU accelerates supported devices, with a visible CPU fallback. No installation, account, key or second studio.</p><p class="help">GPU speed depends on your device. CPU separation can take several minutes. Keep this tab open. Faster browser pulse is available for a quick draft.</p></details>
 <button class="primary full" id="generate" disabled>${icon("sparkle")} Generate beatmaps</button><p class="local-note">${icon("cpu")} Drum-first rhythm. Local processing. No fees.</p></section></aside>
-<section class="editor" aria-label="Beatmap preview and timeline"><div class="preview-toolbar"><div class="difficulty-tabs" role="tablist" aria-label="Preview difficulty">${difficulties.map((d) => `<button role="tab" aria-selected="${d === "Hard"}" data-difficulty="${d}">${label(d)}</button>`).join("")}</div><button class="lightshow-view" id="lightshow-view" aria-pressed="false">${icon("lightbulb")} Lightshow view</button></div>
-<div class="stage-shell" id="stage-shell"><div id="stage"></div><div class="stage-top"><span class="stage-mode" id="stage-mode">${icon("eye")} Preview mode</span><span id="light-pattern" class="light-pattern">RHYTHM ENGINE</span><button class="stage-fullscreen" id="fullscreen" aria-label="Toggle fullscreen">${icon("arrows-out")}</button></div><div class="stage-watermark" hidden>LET THE<br><strong>RHYTHM LEAD.</strong></div><div class="practice-score" id="practice-score" hidden><strong id="score">0</strong><span id="combo">0 combo · 0 missed</span></div><div id="stage-feedback" aria-live="polite"></div><div class="stage-bottom"><span><b class="red-key"></b>Left saber <b class="blue-key"></b>Right saber</span><span id="stage-hint">Follow the notes through the cut frame</span></div><div id="loading" class="loading"><div class="loading-spinner"></div><strong id="loading-title">Finding the rhythm</strong><span id="loading-text">Listening for beats, energy and musical phrases…</span></div></div>
+<section class="editor" aria-label="Beatmap preview and timeline"><div class="preview-toolbar"><div class="difficulty-tabs" role="tablist" aria-label="Preview difficulty">${difficulties.map((d) => `<button role="tab" aria-selected="${d === "Hard"}" data-difficulty="${d}">${label(d)}</button>`).join("")}</div><button class="lightshow-view" id="lightshow-view" aria-pressed="false">${icon("lightbulb")} Lightshow view</button></div><p class="help" id="runtime-status">Demo · fast browser DSP.</p>
+<div class="stage-shell" id="stage-shell"><div id="stage"></div><div class="stage-top"><span class="stage-mode" id="stage-mode">${icon("eye")} Preview mode</span><span id="light-pattern" class="light-pattern">RHYTHM ENGINE</span><button class="stage-fullscreen" id="fullscreen" aria-label="Toggle fullscreen">${icon("arrows-out")}</button></div><div class="stage-watermark" hidden>LET THE<br><strong>RHYTHM LEAD.</strong></div><div class="practice-score" id="practice-score" hidden><strong id="score">0</strong><span id="combo">0 combo · 0 missed</span></div><div id="stage-feedback" aria-live="polite"></div><div class="stage-bottom"><span><b class="red-key"></b>Left saber <b class="blue-key"></b>Right saber</span><span id="stage-hint">Follow the notes through the cut frame</span></div><div id="loading" class="loading"><div class="loading-spinner"></div><strong id="loading-title">Finding the rhythm</strong><span id="loading-text">Listening for beats, energy and musical phrases…</span><button id="cancel-analysis" class="secondary" hidden>Cancel analysis</button></div></div>
 <div class="transport"><div class="transport-main"><button id="restart" class="icon-button" title="Restart" aria-label="Restart">${icon("skip-back")}</button><button class="play-button" id="play" aria-label="Play preview" disabled>${icon("play")}</button><span class="transport-time"><span id="time">0:00</span><span> / </span><span id="duration">1:00</span></span></div><div class="transport-options"><label class="speed" for="speed"><span class="sr-only">Playback speed</span><select id="speed"><option value="0.5">0.5×</option><option value="0.75">0.75×</option><option value="1" selected>1× speed</option><option value="1.25">1.25×</option></select></label><label class="volume" for="volume">${icon("speaker-high")}<input id="volume" type="range" min="0" max="1" step="0.05" value="0.6"><span class="sr-only">Volume</span></label><button class="practice-button" id="practice" aria-pressed="false">${icon("cursor")} Mouse practice</button></div></div>
 <div class="timing-review"><label for="timing-audio">Timing check</label><select id="timing-audio"><option value="notes" selected>Note click</option><option value="off">Click off</option><option value="beats">Beat click</option></select><span id="timing-hint">Hit clicks follow the selected difficulty.</span></div><div class="timeline"><div class="timeline-top"><span>${icon("waveform")} AUDIO & STRUCTURE</span><span id="analysis-summary">Analyzing your track</span></div><div class="waveform-shell"><canvas id="waveform" aria-label="Audio waveform and song sections"></canvas><input id="scrub" class="timeline-scrub" type="range" min="0" max="60" step="0.01" value="0" aria-label="Seek through song"><div id="playhead"></div></div><div class="timeline-ruler" id="ruler"></div><div class="sections" id="sections"></div></div>
 <div class="map-stats"><div><span>${icon("music-note")} Notes</span><strong id="note-count">–</strong></div><div><span>${icon("activity")} Notes / sec</span><strong id="nps">–</strong></div><div><span>${icon("wall")} Walls</span><strong id="wall-count">–</strong></div><div><span>${icon("bomb")} Bombs</span><strong id="bomb-count">–</strong></div><div><span>${icon("lightning")} Light cues</span><strong id="light-count">–</strong></div><div class="validation-stat"><span id="validation-label">Checking patterns</span><strong id="validation">${icon("circle-notch")} In progress</strong></div></div>
 <div class="editor-footnote"><span>${icon("info")} Native Weave lightshow · PC & Quest custom-song loaders · no Chroma required.</span><button class="text-button" id="compat-open">Compatibility ${icon("arrow-up-right")}</button></div>
-</section></div><footer><span>v0.4.1 · Local neural connection</span><button id="research-open">Under the hood ${icon("arrow-up-right")}</button><a href="https://github.com/Reza2kn/open-beatmap-studio" target="_blank" rel="noreferrer">Source on GitHub ${icon("arrow-up-right")}</a><span>Audio stays on your device<span class="desktop-only"> · Learned tracking uses your local companion</span></span></footer></main>
+</section></div><footer><span>v0.5 · Browser neural studio</span><button id="research-open">Under the hood ${icon("arrow-up-right")}</button><a href="https://github.com/Reza2kn/open-beatmap-studio" target="_blank" rel="noreferrer">Source on GitHub ${icon("arrow-up-right")}</a><span>Audio stays on your device<span class="desktop-only"> · Neural models run in this tab</span></span></footer></main>
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 <dialog id="dialog"><button id="dialog-close" class="icon-button dialog-close" aria-label="Close dialog">${icon("x")}</button><div id="dialog-content"></div></dialog>`;
 const context = new AudioContext();
@@ -86,18 +87,12 @@ function showDialog(html) {
   $("#dialog-content").innerHTML = html;
   $("#dialog").showModal();
 }
-function companionSetup() {
-  $("#model-controls").open=true;
-  $("#companion-status").textContent='Neural mode is not connected in this tab.';
-  showDialog(`<div class="dialog-eyebrow">CONNECT LOCAL NEURAL MODE</div><h2>Open the local studio.</h2><p>The models run on your computer through the companion. Connect in the local studio, then upload your song there.</p><p><a class="primary" href="${LOCAL_STUDIO_URL}" target="_blank" rel="noopener">Open local neural studio ${icon("arrow-up-right")}</a></p><p class="help">Keep <code>npm run bridge</code> running. The local studio remembers its connection during this browser session, including page reloads. Your audio stays on this computer.</p>`);
-}
-async function updateCompanionStatus() {
-  if($("#beat-engine").value!=='learned') {$("#companion-status").textContent='Browser analysis · no connection needed.';return;}
-  const key=$("#model-key").value||$("#bridge-token").value;
-  if(!key.trim()&&!isLocalNeuralStudio()) {$("#companion-status").textContent='Not connected · open the local neural studio below.';return;}
-  $("#companion-status").textContent='Checking local companion…';
-  try {await checkLocalCompanion(key);$("#companion-status").textContent='Connected · local neural analysis ready.';}
-  catch(e) {$("#companion-status").textContent=e.message;}
+let analysisController;
+$("#cancel-analysis").onclick=()=>analysisController?.abort();
+function updateModelStatus() {
+  $("#model-status").textContent=$("#beat-engine").value==='learned'
+    ? 'Neural mode runs here. First use downloads ~140 MB of reusable models and runtime. Your song stays in this tab.'
+    : 'Fast browser DSP. No model download. Neural mode can distinguish isolated drums from other sounds.';
 }
 $("#dialog-close").onclick = () => $("#dialog").close();
 $("#dialog").onclick = (e) => {
@@ -195,9 +190,6 @@ function settings() {
 }
 async function generate({ reanalyze = false } = {}) {
   if (!original || busy) return;
-  if(!isDemo&&$("#beat-engine").value==='learned'&&!isLocalNeuralStudio()&&!($("#model-key").value||$("#bridge-token").value).trim()) {
-    markDirty();companionSetup();return;
-  }
   transport.pause();
   setBusy(true);
   await new Promise((r) => setTimeout(r, 30));
@@ -211,16 +203,34 @@ async function generate({ reanalyze = false } = {}) {
       !buffer ||
       buffer.duration !== trimmed.duration ||
       generate.lastStart !== start;
-    const engineChanged = generate.lastEngine !== $("#beat-engine").value;
+    const engineChanged = generate.lastEngine !== $("#beat-engine").value+$("#neural-device").value;
     if (reanalyze || trimChanged || engineChanged || !analysis) {
       buffer = trimmed;
       encoded = null;
       analysis = await analyzeAudio(buffer);
       analysis.beatSource = "inferred";
+      if(analysis.silent)throw new Error("This audio is silent. Choose a track with audible music.");
       if ($("#beat-engine").value === "learned" && !isDemo) {
-        setBusy(true, "Isolating drums & tracking the pulse", "Local neural inference can take a few minutes on the CPU. Your audio stays on this computer…");
-        analysis = applyBeatModel(analysis, await trackBeatsLocally(buffer, $("#model-key").value || $("#bridge-token").value));
+        analysisController=new AbortController();
+        $("#model-fallback").hidden=true;
+        $("#model-fallback").textContent="";
+        $("#cancel-analysis").hidden=false;
+        const learned=await analyzeBrowserNeural(buffer,{
+          signal:analysisController.signal,
+          backend:$("#neural-device").value,
+          onProgress:({stage,progress,fallbackReason})=>{
+            $("#runtime-status").textContent=stage;
+            if(fallbackReason){$("#model-fallback").hidden=false;$("#model-fallback").textContent+=`GPU fallback: ${fallbackReason} `;}
+            setBusy(true,stage,`Running on this device · ${Math.round((progress||0)*100)}% of this step. First use downloads models; later runs reuse the cache.`);
+            $("#model-status").textContent=stage;
+          },
+        });
+        analysis=applyBeatModel(analysis,learned);
+        $("#model-status").textContent=`Complete · Beats: ${learned.model.device==='webgpu'?'WebGPU':'CPU'} · Drums: ${learned.drumModel.device==='webgpu'?'WebGPU':'CPU'} · ${Math.round(learned.elapsedSeconds)}s. No audio uploaded.`;
+        $("#runtime-status").textContent=$("#model-status").textContent;
       }
+      if(isDemo){$("#model-status").textContent="Demo uses fast browser DSP. Uploaded tracks use your selected analyzer.";$("#runtime-status").textContent="Demo · fast browser DSP.";}
+      else if($("#beat-engine").value!=="learned")$("#runtime-status").textContent="Browser pulse · DSP · no model inference.";
       if (isDemo && start === 0) {
         analysis = retimeAnalysis(analysis, 128, 0);
       }
@@ -247,7 +257,7 @@ async function generate({ reanalyze = false } = {}) {
     if (!Number.isFinite(analysis.offset) || Math.abs(analysis.offset) > 5)
       throw new Error("Grid offset must be between −5 and 5 seconds.");
     generate.lastStart = start;
-    generate.lastEngine = $("#beat-engine").value;
+    generate.lastEngine = $("#beat-engine").value+$("#neural-device").value;
     maps = generateMaps(analysis, settings());
     const lightRhythmEvents = getRhythmAnchors(analysis).map(event => ({ ...event,
       low: event.kind === "kick" ? .8 : .1, mid: event.kind === "snare" ? .8 : .2,
@@ -274,18 +284,22 @@ async function generate({ reanalyze = false } = {}) {
     $("#scrub").max = buffer.duration;
     $("#generate").innerHTML = `${icon("sparkle")} Regenerate beatmaps`;
     $("#stage-hint").textContent = stage?.practice
-      ? "Hold left / right click and slash in the arrow direction"
+      ? "Hold and swipe through either color near the frame. Follow the arrows."
       : "Follow the notes through the cut frame";
   } catch (e) {
     dirty = true;
-    toast(e.message, true);
-    console.error(e);
+    toast(e.name==='AbortError'?'Analysis cancelled. Your track is ready to retry.':e.message, e.name!=='AbortError');
+    if(e.name!=='AbortError')console.error(e);
+    analysis=null;
+    $("#runtime-status").textContent=e.name==='AbortError'?'Analysis cancelled · ready to retry.':'Analysis failed · check the message and retry.';
   } finally {
+    analysisController=null;
+    $("#cancel-analysis").hidden=true;
     setBusy(false);
   }
 }
 function selectDifficulty(d) {
-  if (!maps) return;
+  if (!maps || !analysis) return;
   selected = d;
   for (const btn of document.querySelectorAll("[data-difficulty]"))
     btn.setAttribute("aria-selected", btn.dataset.difficulty === d);
@@ -433,7 +447,7 @@ $("#practice").onclick = () => {
     icon(active ? "cursor" : "eye") +
     (active ? " Mouse practice" : " Preview mode");
   $("#stage-hint").textContent = active
-    ? "Hold left / right click and slash in the arrow direction"
+    ? "Hold and swipe through either color near the frame. Follow the arrows."
     : "Follow the notes through the cut frame";
   if (active) {
     stage.lightshowOnly = false;
@@ -441,7 +455,7 @@ $("#practice").onclick = () => {
   }
   if (active)
     toast(
-      "Left click: red saber. Right click: blue saber. Slash along the arrows. Move away from walls.",
+      "Hold and swipe through either color near the frame. Follow the arrows. Move away from walls.",
     );
 };
 $("#lightshow-view").onclick = () => {
@@ -470,6 +484,7 @@ window.addEventListener("keydown", (e) => {
 });
 for (const btn of document.querySelectorAll("[data-difficulty]"))
   btn.onclick = () => {
+    if(busy||dirty)return;
     transport.pause();
     selectDifficulty(btn.dataset.difficulty);
   };
@@ -505,11 +520,9 @@ $("#double-bpm").onclick = () => {
   markDirty();
 };
 $("#generate").onclick = () => generate();
-$("#beat-engine").onchange = () => {markDirty();if($("#beat-engine").value==='learned')$("#model-controls").open=true;updateCompanionStatus();};
-$("#model-key").onchange = () => { if ($("#beat-engine").value === "learned") {markDirty();updateCompanionStatus();} };
-$("#model-guide").onclick = () => showDialog(`<div class="dialog-eyebrow">LOCAL LEARNED BEAT TRACKER</div><h2>Map the isolated drums.</h2><p>Demucs isolates the drums, and Beat This! small0 identifies beats and downbeats on your own computer. CPU inference can take a few minutes per song and needs a one-time model download. Your song stays on your device.</p><pre>npm run model:setup
-npm run build
-npm run bridge</pre><p><a href="${LOCAL_STUDIO_URL}" target="_blank" rel="noopener">Open the local neural studio</a>, click Connect &amp; open studio, then upload your song. Keep the companion terminal open. The authenticated local session survives page reloads without copying a key.</p><p class="help">Advanced hosted connections can still use a temporary key, but browser local-network policy may block them. Changing BPM or grid offset switches the current result to your adjusted browser grid.</p>`);
+$("#beat-engine").onchange=()=>{markDirty();updateModelStatus();};
+$("#neural-device").onchange=()=>{markDirty();updateModelStatus();};
+
 async function loadFile(file) {
   if (!file || busy) return;
   if (file.size > 100 * 1024 * 1024) {
@@ -714,7 +727,7 @@ $("#about-open").onclick = () =>
   );
 $("#research-open").onclick = () =>
   showDialog(
-    `<div class="dialog-eyebrow">UNDER THE HOOD</div><h2>Musical structure.<br>Intentional movement.</h2><p><strong>Listen:</strong> The browser estimates a pulse from spectral rhythm. The browser separates transient and sustained sounds using median filters. Local neural mode uses Demucs drum separation and Beat This! small0 beat tracking. The arranger prioritizes recurring kick/snare patterns and uses melodic attacks in passages without drums.</p><p><strong>Choreograph:</strong> The musical pulse provides the note rhythm. Recurring rhythmic families reuse movement vocabulary, alternate hands and cut directions, and simplify across five difficulties. Conservative walls and sparse bombs are checked against notes.</p><p><strong>Light:</strong> native event-box groups create spatial color waves, mirrored rotating beam fans, bass pulses and percussion accents, with phrase builds and deliberate rests. The browser provides an artistic approximation; actual game environments interpret these events differently.</p><p><strong>Export:</strong> a lightweight WebAssembly Vorbis encoder produces real Ogg audio in a worker. Musical pulse timing is preserved; grid offsets are baked once into exported event timestamps.</p><p class="help">The research notes compare browser DSP, local learned beat trackers, and tiny decision models. Beat This! is available through the optional local companion; browser pulse mode needs no model download.</p><div class="research-links"><a href="https://bsmg.wiki/mapping/map-format.html" target="_blank" rel="noreferrer">BSMG map format ↗</a><a href="https://bsmg.wiki/mapping/basic-mapping.html" target="_blank" rel="noreferrer">Mapping fundamentals ↗</a><a href="https://github.com/arseneyr/wasm-media-encoders" target="_blank" rel="noreferrer">Local Vorbis encoder ↗</a></div>`,
+    `<div class="dialog-eyebrow">UNDER THE HOOD</div><h2>Musical structure.<br>Intentional movement.</h2><p><strong>Listen:</strong> The browser estimates a pulse from spectral rhythm. The browser separates transient and sustained sounds using median filters. Neural mode runs HTDemucs drum separation and Beat This! small0 beat tracking entirely in browser workers. The arranger prioritizes recurring kick/snare patterns and uses melodic attacks in passages without drums.</p><p><strong>Choreograph:</strong> The musical pulse provides the note rhythm. Recurring rhythmic families reuse movement vocabulary, alternate hands and cut directions, and simplify across five difficulties. Conservative walls and sparse bombs are checked against notes.</p><p><strong>Light:</strong> native event-box groups create spatial color waves, mirrored rotating beam fans, bass pulses and percussion accents, with phrase builds and deliberate rests. The browser provides an artistic approximation; actual game environments interpret these events differently.</p><p><strong>Export:</strong> a lightweight WebAssembly Vorbis encoder produces real Ogg audio in a worker. Musical pulse timing is preserved; grid offsets are baked once into exported event timestamps.</p><p class="help">The models download as static files; audio never leaves the browser. Neural inference prefers WebGPU for the learned layers and falls back to a fresh WebAssembly worker if GPU execution fails. Spectrograms and waveform reconstruction use CPU DSP. Ordinary HTTPS hosting needs no special browser headers. Browser pulse uses DSP and needs no model download.</p><div class="research-links"><a href="https://bsmg.wiki/mapping/map-format.html" target="_blank" rel="noreferrer">BSMG map format ↗</a><a href="https://bsmg.wiki/mapping/basic-mapping.html" target="_blank" rel="noreferrer">Mapping fundamentals ↗</a><a href="https://github.com/arseneyr/wasm-media-encoders" target="_blank" rel="noreferrer">Local Vorbis encoder ↗</a></div>`,
   );
 async function loadDemo() {
   if (busy) return;
@@ -744,16 +757,6 @@ $("#demo").onclick = loadDemo;
 new ResizeObserver(() => renderTimeline()).observe(
   $("#waveform").parentElement,
 );
-if(isLocalNeuralStudio()) {
-  $("#beat-engine").value='learned';
-  $("#manual-companion-key").hidden=true;
-  $("#open-local-studio").hidden=true;
-  $("#local-studio-help").textContent='This studio connects directly to your local models. No companion key needed.';
-  $("#model-controls").open=true;
-  $("#bridge-token").hidden=true;
-  document.querySelector('label[for="bridge-token"]').hidden=true;
-  updateCompanionStatus();
-}
 loadDemo();
 // Narrow read-only diagnostics for reproducible local smoke checks. No audio is exposed.
 window.beatmapStudio = {

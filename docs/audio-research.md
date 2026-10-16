@@ -1,6 +1,6 @@
 # Browser audio analysis and local-model path
 
-Research checked 2026-10-15 against primary project documentation. This document describes the browser DSP component: it makes no inference calls, downloads no weights, and sends no audio to a service. A local CPU Beat This! service is now implemented separately; see [local model setup and API](local-model.md). Browser-only ONNX inference remains future work.
+Research checked 2026-10-15 against primary project documentation. This document describes the browser DSP component: it makes no inference calls, downloads no weights, and sends no audio to a service. A local CPU Beat This! service is now implemented separately; see [local model setup and API](local-model.md). Update v0.5: both Beat This! and HTDemucs now run inside browser WASM workers; see [browser neural architecture](browser-neural.md). The older local-service research below is retained for provenance.
 
 ## Implemented signal path
 

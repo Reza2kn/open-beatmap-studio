@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import { PRACTICE_LIMITS, assessPracticeCut, projectPracticeBox } from "./practice.js";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
@@ -60,6 +61,10 @@ export class Stage {
     this.particles = [];
     this.pointer = [];
     this.lastPointer = null;
+    this.strokeAnchor = null;
+    this.activePointerId = null;
+    this.dragging = false;
+    this.pointerInside = false;
     this.disposed = false;
     this.time = 0;
     this.scene = new THREE.Scene();
@@ -213,25 +218,21 @@ export class Stage {
     this.resizeObserver.observe(container);
     this.resize();
     this.move = (e) => this.pointerMove(e);
-    this.down = (e) => {
-      if (!this.practice) return;
-      e.preventDefault();
-      this.color = e.button === 2 ? 1 : 0;
-      this.dragging = true;
-      this.lastPointer = null;
-      this.renderer.domElement.setPointerCapture(e.pointerId);
-      this.pointerMove(e);
+    this.down = (e) => this.pointerDown(e);
+    this.up = (e) => this.pointerUp(e);
+    this.cancel = () => this.clearPointerState();
+    this.leave = () => {
+      if (!this.dragging) { this.pointerInside = false; this.strokeAnchor = null; }
     };
-    this.up = () => {
-      this.dragging = false;
-      this.lastPointer = null;
-    };
-    this.contextmenu = (e) => e.preventDefault();
+    this.contextmenu = (e) => { if (this.practice) e.preventDefault(); };
     this.renderer.domElement.addEventListener("pointermove", this.move);
     this.renderer.domElement.addEventListener("pointerdown", this.down);
     this.renderer.domElement.addEventListener("pointerup", this.up);
-    this.renderer.domElement.addEventListener("pointercancel", this.up);
+    this.renderer.domElement.addEventListener("pointercancel", this.cancel);
+    this.renderer.domElement.addEventListener("lostpointercapture", this.cancel);
+    this.renderer.domElement.addEventListener("pointerleave", this.leave);
     this.renderer.domElement.addEventListener("contextmenu", this.contextmenu);
+    window.addEventListener("blur", this.cancel);
     this.key = (e) => {
       if (!this.practice || /INPUT|SELECT|TEXTAREA/.test(e.target.tagName))
         return;
@@ -438,10 +439,11 @@ export class Stage {
     this.hit.clear();
     this.missed.clear();
     this.wallHits.clear();
+    this.clearPointerState();
     // Seeking starts a fresh practice window; earlier notes are skipped.
     const now = this.getTime?.() || 0;
     for (const o of this.objects || []) {
-      if (o.kind === "note" && o.time < now - 0.18) this.missed.add(o);
+      if (o.kind === "note" && o.time < now - PRACTICE_LIMITS.late) this.missed.add(o);
     }
   }
   setMap(map, bpm, offset) {
@@ -458,7 +460,6 @@ export class Stage {
     this.map = map;
     this.bpm = bpm;
     this.offset = offset;
-    this.reset();
     for (const [index, n] of map.notes.entries()) {
       const mesh = new THREE.Group(),
         cube = new THREE.Mesh(this.noteGeometry, this.noteMaterials[n.color]);
@@ -523,81 +524,119 @@ export class Stage {
       });
     }
     this.objects.sort((a, b) => a.time - b.time);
+    this.reset();
   }
   setPractice(active) {
     this.practice = active;
     this.cursor.visible = active;
     this.renderer.domElement.style.cursor = active ? "crosshair" : "default";
+    this.renderer.domElement.style.touchAction = active ? "none" : "";
     this.reset();
   }
-  pointerMove(e) {
-    if (!this.practice) return;
-    const rect = this.renderer.domElement.getBoundingClientRect();
-    this.mouse.set(
-      ((e.clientX - rect.left) / rect.width) * 2 - 1,
-      (-(e.clientY - rect.top) / rect.height) * 2 + 1,
-    );
-    this.raycaster.setFromCamera(this.mouse, this.camera);
-    const p = new THREE.Vector3();
-    this.raycaster.ray.intersectPlane(
-      new THREE.Plane(new THREE.Vector3(0, 0, 1), -1),
-      p,
-    );
-    this.cursor.position.copy(p);
-    this.cursor.material.color.setHex(this.color ? BLUE : RED);
-    this.pointer.push({ p: p.clone(), at: performance.now() });
-    this.pointer = this.pointer.slice(-12);
-    if (this.dragging && this.isPlaying()) {
-      const from = this.lastPointer || p;
-      const segment = new THREE.Line3(from, p),
-        closest = new THREE.Vector3(),
-        movement = p.clone().sub(from);
-      for (const o of this.objects) {
-        if (Math.abs(o.time - this.getTime()) > 0.18 || this.hit.has(o))
-          continue;
-        if (o.kind === "wall") continue;
-        segment.closestPointToPoint(
-          new THREE.Vector3(o.mesh.position.x, o.mesh.position.y, 1),
-          true,
-          closest,
-        );
-        if (
-          closest.distanceTo(
-            new THREE.Vector3(o.mesh.position.x, o.mesh.position.y, 1),
-          ) > 0.52
-        )
-          continue;
-        if (o.kind === "bomb") {
-          this.hit.add(o);
-          this.onHit?.({ bomb: true });
-          this.burst(o.mesh.position, 0xffa05c);
-          continue;
-        }
-        if (o.data.color !== this.color || movement.length() < 0.035) continue;
-        const vectors = {
-          0: [0, 1],
-          1: [0, -1],
-          2: [-1, 0],
-          3: [1, 0],
-          4: [-1, 1],
-          5: [1, 1],
-          6: [-1, -1],
-          7: [1, -1],
-        };
-        const v = vectors[o.data.direction];
-        if (
-          v &&
-          new THREE.Vector2(movement.x, movement.y)
-            .normalize()
-            .dot(new THREE.Vector2(...v).normalize()) < 0.15
-        )
-          continue;
-        this.hit.add(o);
-        this.onHit?.({ note: o.data });
-        this.burst(o.mesh.position, o.data.color ? BLUE : RED);
+  pointerDown(e) {
+    if (!this.practice || (this.activePointerId !== null && this.activePointerId !== e.pointerId)) return;
+    e.preventDefault();
+    this.color = e.button === 2 ? 1 : 0; // Trail appearance; either button cuts either color.
+    this.dragging = true;
+    this.activePointerId = e.pointerId;
+    this.strokeAnchor = null;
+    this.lastPointer = null;
+    this.renderer.domElement.focus({ preventScroll: true });
+    this.renderer.domElement.setPointerCapture(e.pointerId);
+    this.pointerMove(e);
+  }
+  pointerUp(e) {
+    if (this.activePointerId !== e.pointerId) return;
+    // Browsers may deliver the final position only with pointerup.
+    this.pointerMove(e);
+    this.clearPointerState(false);
+  }
+  clearPointerState(clearTrail = true) {
+    const pointerId = this.activePointerId;
+    this.activePointerId = null;
+    this.dragging = false;
+    this.strokeAnchor = null;
+    this.lastPointer = null;
+    this.pointerInside = false;
+    if (clearTrail) this.pointer = [];
+    if (pointerId !== null && this.renderer?.domElement.hasPointerCapture(pointerId))
+      this.renderer.domElement.releasePointerCapture(pointerId);
+    this.renderDirty = true;
+  }
+  practiceBounds(object, time, rect) {
+    return projectPracticeBox({
+      x: object.mesh.position.x,
+      y: object.mesh.position.y,
+      z: 1 - (object.time - time) * 10,
+    }, .36, point => {
+      this.projected.set(point.x, point.y, point.z).project(this.camera);
+      return { x: rect.left + (this.projected.x + 1) * rect.width / 2,
+        y: rect.top + (1 - this.projected.y) * rect.height / 2 };
+    });
+  }
+  cutPointerSegment(from, to, rect) {
+    this.camera.updateMatrixWorld();
+    for (const object of this.objects) {
+      if (object.kind === 'wall' || this.hit.has(object) || this.missed.has(object)) continue;
+      if (object.time < from.time - PRACTICE_LIMITS.late || object.time > to.time + PRACTICE_LIMITS.early) continue;
+      const result = assessPracticeCut({ from, to,
+        before: this.practiceBounds(object, from.time, rect),
+        after: this.practiceBounds(object, to.time, rect),
+        attackTime: object.time, direction: object.data.direction,
+        kind: object.kind, noteColor: object.data.color,
+      });
+      if (!result.hit) continue;
+      this.hit.add(object);
+      const position = new THREE.Vector3(object.mesh.position.x, object.mesh.position.y,
+        1 - (object.time - result.time) * 10);
+      if (object.kind === 'bomb') {
+        this.onHit?.({ bomb: true });
+        this.burst(position, 0xffa05c);
+      } else {
+        this.color = object.data.color;
+        this.onHit?.({ note: object.data, timingError: result.timingError });
+        this.burst(position, object.data.color ? BLUE : RED);
       }
     }
-    this.lastPointer = p.clone();
+  }
+  pointerMove(e) {
+    if (!this.practice || (this.dragging && e.pointerId !== this.activePointerId)) return;
+    const rect = this.renderer.domElement.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    const now = this.getTime?.() || 0;
+    const playing = this.isPlaying?.();
+    const raw = e.getCoalescedEvents?.();
+    const samples = raw?.length ? [...raw] : [];
+    if (!samples.length || samples.at(-1).clientX !== e.clientX || samples.at(-1).clientY !== e.clientY) samples.push(e);
+    const previous = this.lastPointer;
+    const eventStamp = Number.isFinite(e.timeStamp) ? e.timeStamp : performance.now();
+    const wallSpan = previous ? Math.max(1, eventStamp - previous.at) : 0;
+    // Audio-clock interpolation automatically follows slowed playback too.
+    const startTime = previous ? Math.max(previous.time, now - PRACTICE_LIMITS.maxStrokeSeconds) : now;
+    for (const sample of samples) {
+      const stamp = Number.isFinite(sample.timeStamp) ? sample.timeStamp : eventStamp;
+      const fraction = previous ? Math.max(0, Math.min(1, (stamp - previous.at) / wallSpan)) : 1;
+      const point = { x: sample.clientX, y: sample.clientY, time: startTime + (now - startTime) * fraction, at: stamp };
+      this.mouse.set(((point.x - rect.left) / rect.width) * 2 - 1,
+        -((point.y - rect.top) / rect.height) * 2 + 1);
+      this.raycaster.setFromCamera(this.mouse, this.camera);
+      const world = new THREE.Vector3();
+      if (this.raycaster.ray.intersectPlane(new THREE.Plane(new THREE.Vector3(0, 0, 1), -1), world)) {
+        this.cursor.position.copy(world);
+        this.pointer.push({ p: world.clone(), at: performance.now() });
+      }
+      this.pointerInside = point.x >= rect.left && point.x <= rect.right && point.y >= rect.top && point.y <= rect.bottom;
+      this.lastPointer = point;
+      if (!this.dragging || !playing) { this.strokeAnchor = point; continue; }
+      if (!this.strokeAnchor || point.time < this.strokeAnchor.time) { this.strokeAnchor = point; continue; }
+      const from = { ...this.strokeAnchor, time: Math.max(this.strokeAnchor.time, point.time - PRACTICE_LIMITS.maxStrokeSeconds) };
+      if (Math.hypot(point.x - from.x, point.y - from.y) < PRACTICE_LIMITS.minMovement) continue;
+      this.cutPointerSegment(from, point, rect);
+      this.strokeAnchor = point;
+    }
+    this.pointer = this.pointer.slice(-24);
+    this.cursor.material.color.setHex(this.color ? BLUE : RED);
+    this.renderDirty = true;
   }
   burst(position, color) {
     for (let i = 0; i < 8; i++) {
@@ -662,7 +701,7 @@ export class Stage {
       for (const o of this.objects) {
         const dt = o.time - now;
         const end =
-          o.kind === "wall" ? (-o.data.duration * 60) / this.bpm - 0.5 : -0.25;
+          o.kind === "wall" ? (-o.data.duration * 60) / this.bpm - 0.5 : -(PRACTICE_LIMITS.late + .08);
         if (
           o.kind === "note" &&
           !this.practice &&
@@ -676,7 +715,7 @@ export class Stage {
             o.data.color ? BLUE : RED,
           );
         }
-        const visibleTail = o.kind === "note" && !this.practice ? 0 : end;
+        const visibleTail = o.kind === "note" ? (this.practice ? -PRACTICE_LIMITS.late : 0) : end;
         o.mesh.visible =
           dt < 5.5 &&
           dt > visibleTail &&
@@ -687,7 +726,7 @@ export class Stage {
           this.practice &&
           playing &&
           o.kind === "note" &&
-          dt < -0.18 &&
+          dt < -PRACTICE_LIMITS.late &&
           !this.hit.has(o) &&
           !this.missed.has(o)
         ) {
@@ -701,7 +740,7 @@ export class Stage {
           dt < 0 &&
           dt > (-o.data.duration * 60) / this.bpm &&
           !this.wallHits.has(o) &&
-          this.cursor.visible &&
+          this.cursor.visible && this.pointerInside &&
           Math.abs(this.cursor.position.x - o.mesh.position.x) <
             o.data.width / 2 + 0.1
         ) {
@@ -736,6 +775,9 @@ export class Stage {
     cancelAnimationFrame(this.raf);
     this.resizeObserver.disconnect();
     window.removeEventListener("keydown", this.key);
+    window.removeEventListener("blur", this.cancel);
+    this.clearPointerState();
+    for (const [event, handler] of [["pointermove",this.move],["pointerdown",this.down],["pointerup",this.up],["pointercancel",this.cancel],["lostpointercapture",this.cancel],["pointerleave",this.leave],["contextmenu",this.contextmenu]]) this.renderer.domElement.removeEventListener(event,handler);
     this.scene.traverse((o) => {
       o.geometry?.dispose();
       if (o.material)

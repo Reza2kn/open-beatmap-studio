@@ -1,0 +1,99 @@
+{
+  "id": "htdemucs-browser-core",
+  "name": "HTDemucs v4 browser core",
+  "license": "MIT",
+  "format": "onnx-byte-shards",
+  "source": {
+    "repository": "https://github.com/StemSplit/demucs-onnx",
+    "weights": "https://huggingface.co/StemSplitio/htdemucs-onnx/resolve/d54ed9eb60e258ea82131c6ee14578628816456a/htdemucs_fp16weights.onnx",
+    "sha256": "d05c269d0178d2a72ad484b10b11dd370193fc923201c3b27a99f848745db70a"
+  },
+  "modelBytes": 118419452,
+  "modelSha256": "d0d4ed8154c4b087941a211b88e90bac3850d3aa4adce002615af3d4f7bbac60",
+  "nodes": 3756,
+  "input": {
+    "name": "mix",
+    "shape": [
+      1,
+      2,
+      343980
+    ],
+    "type": "float32"
+  },
+  "outputs": {
+    "spectra": {
+      "name": "/Pad_2_output_0",
+      "shape": [
+        1,
+        4,
+        2,
+        2,
+        2049,
+        340
+      ]
+    },
+    "time": {
+      "name": "/Add_4_output_0",
+      "shape": [
+        1,
+        4,
+        2,
+        343980
+      ]
+    }
+  },
+  "sampleRate": 44100,
+  "segmentSamples": 343980,
+  "stems": [
+    "drums",
+    "bass",
+    "other",
+    "vocals"
+  ],
+  "reconstruction": {
+    "fftSize": 4096,
+    "hopLength": 1024,
+    "window": "hann-periodic",
+    "normalization": "ortho",
+    "crop": 3584,
+    "length": 343980,
+    "formula": "stems = time + inverseStft(spectra)"
+  },
+  "shards": [
+    {
+      "file": "demucs-gpu.part01.bin",
+      "bytes": 18874368,
+      "sha256": "5aa32862d9d177eaf323b1cd7b8c70236661b8d3d5f0ff2d8cf486ffbad99724"
+    },
+    {
+      "file": "demucs-gpu.part02.bin",
+      "bytes": 18874368,
+      "sha256": "e5e9fbc433e2231fe18059d51d6e08e7cb92df62a9b3aea2ce916de2b087a053"
+    },
+    {
+      "file": "demucs-gpu.part03.bin",
+      "bytes": 18874368,
+      "sha256": "9af3efd0f905fc064decf0ed7ebbcda7ef2efd0fbbe738f574545f1fd0ac32fe"
+    },
+    {
+      "file": "demucs-gpu.part04.bin",
+      "bytes": 18874368,
+      "sha256": "c3877799986e4d2746c909f7f927e06ce6c727dd20f85e495f9688fc31421315"
+    },
+    {
+      "file": "demucs-gpu.part05.bin",
+      "bytes": 18874368,
+      "sha256": "337486634c9102c48ae90bb5b08fa22805bff1bdab220aec3b2c04bb32c891f3"
+    },
+    {
+      "file": "demucs-gpu.part06.bin",
+      "bytes": 18874368,
+      "sha256": "bc0a50aab9e69369e568ecb3f33357961ebeb4752b63c8cb9ccf388eaf1e6ee8"
+    },
+    {
+      "file": "demucs-gpu.part07.bin",
+      "bytes": 5173244,
+      "sha256": "7ef41fdac11c90b44e3c36d706f07029e3b3ac3485e88b44c9cd44b28b90a665"
+    }
+  ]
+}

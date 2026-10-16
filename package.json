@@ -1,6 +1,6 @@
 {
   "name": "open-beatmap-studio",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "private": true,
   "type": "module",
   "description": "Browser-first open source Beat Saber map generator",
@@ -18,6 +18,7 @@
     "@fontsource/space-grotesk": "^5.2.10",
     "@phosphor-icons/web": "^2.1.2",
     "fflate": "^0.8.2",
+    "onnxruntime-web": "1.30.0",
     "three": "^0.180.0",
     "wasm-media-encoders": "^0.7.0"
   },

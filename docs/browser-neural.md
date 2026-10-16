@@ -1,0 +1,29 @@
+# Entirely browser-local neural analysis (v0.5)
+
+Neural drums + beats uses two real audio models in sequential dedicated workers. It requires no local server, Python installation, account, companion key or second studio. Audio decoding, resampling, inference, attack detection, arrangement and export stay in the browser tab. The arranger and advanced native lightshow director remain deterministic JavaScript; no language model is involved.
+
+1. **Beat This! small0:** a 9.49 MB ONNX graph plus exact mel bank find beats/downbeats. Model assets and ONNX Runtime Web 1.30.0 WASM are same-origin bundled files. See [conversion and numerical parity](browser-beat-model.md).
+2. **HTDemucs v4:** a 118,419,452-byte learned core separates drums, bass, other instruments and vocals. The learned network runs on WebGPU when supported. JavaScript performs inverse STFT reconstruction outside the graph, removing the large unrolled export that prevented GPU execution. See [core export and reconstruction parity](browser-demucs-core.md). We retain mono drums/other/vocals for physical attack detection, avoiding three complete stereo output buffers. The fixed 7.8-second stereo 44.1 kHz graph runs with 25% overlap and triangular overlap-add. A symmetric lowpass decimates features to 22.05 kHz without adding a timing offset. No event timestamps are filled from the beat grid.
+3. **Attack selection:** physical waveform energy rises, band-balanced quieter percussion, tonal attack evidence and coherent-vocal vetoes feed the same five-difficulty arranger and rhythm lighting used previously.
+
+## Drum-model provenance and hosting
+
+The MIT [Meta Demucs project](https://github.com/facebookresearch/demucs) supplies the model architecture and weights. The browser-compatible fp16-weight/fp32-compute graph comes from the MIT [StemSplit ONNX port](https://github.com/StemSplit/demucs-onnx), using its documented [browser interface](https://github.com/StemSplit/demucs-onnx/blob/main/docs/browser.md): input `mix` [1,2,343980], output `stems` [1,4,2,343980], rows drums/bass/other/vocals.
+
+The original graph was obtained from [the pinned Hugging Face revision](https://huggingface.co/StemSplitio/htdemucs-onnx/tree/d54ed9eb60e258ea82131c6ee14578628816456a). SHA-256: `d05c269d0178d2a72ad484b10b11dd370193fc923201c3b27a99f848745db70a`. The distributed core is derived reproducibly from that source. Seven same-origin static shards each stay below 20 MiB and record their size/SHA-256 in `demucs-gpu-manifest.json`; the assembled graph is also verified before execution. Successful downloads are retained in CacheStorage when available. Only static models/runtime are requested; songs and generated maps stay in the tab.
+
+Total first-use models/runtime are approximately 140 MB. Subsequent sessions reuse browser HTTP/model caches when retained by the browser. This is not an offline-installed PWA; the initial app and downloads need connectivity. Storage-limited/private browsing can prevent persistent caching without preventing the current analysis.
+
+## Runtime and limits
+
+Neural mode prefers WebGPU for both learned networks, using ONNX Runtime Web 1.30.0. The UI reports each model's actual backend. CPU spectrogram/reconstruction/attack detection remains ordinary DSP. When GPU execution fails, the partial attempt is discarded and a fresh single-threaded WASM worker retries that model; the fallback is visible. No cross-origin isolation or local-network permissions are required. Full-track jobs can be cancelled; terminating the active worker releases its session. Model workers run sequentially to bound memory. The smaller learned core uses graph optimization enabled, with CPU arena/memory-pattern planning disabled. The initial fully unrolled graph exceeded WASM allocation limits under optimization and failed GPU placement; it is not the shipped graph. No inference fallback silently substitutes DSP for a failed neural run.
+
+The full-song separation can take several minutes on CPU and uses substantial memory; smaller mobile devices may be unable to run it. Browser pulse remains an explicitly labeled fast DSP alternative. First-use download and per-chunk progress are visible. The app keeps the original song available after cancellation or failure for retry/trimming.
+
+Pulse predictions and separated stems are estimates. The ONNX port's waveform estimates can differ from the Python path, which used mono input and different overlap/shifts; identical note counts are not expected. Physical attack timestamps are preserved, but subjective musicality and headset gameplay still need human review. Browser practice is a mouse approximation, not a VR comfort evaluation.
+
+YouTube downloading remains a separate optional local importer because ordinary browser pages cannot reliably access YouTube media directly. It is not needed for uploaded-file neural analysis.
+
+## Independent graph check
+
+On a 7.8-second stereo excerpt of the supplied private recording spanning the piano/drum transition, the pinned browser ONNX graph was compared against the cached official PyTorch HTDemucs forward pass on identical 44.1 kHz input. Mean absolute waveform error was 9.95e-6, maximum error 5.42e-4; each of the four stems had correlation above .99999996. This verifies graph-conversion fidelity for that excerpt, not source-separation accuracy. A separate actual ONNX Runtime Web single-threaded WASM chunk completed successfully. Whole-track browser/export validation is recorded in [verification](verification.md).

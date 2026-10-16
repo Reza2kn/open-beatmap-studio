@@ -2,7 +2,8 @@ import { defineConfig } from "vite";
 export default defineConfig({
   // Discover the worker codec before users import audio: lazy optimization
   // otherwise reloads the development page during its first ZIP export.
-  optimizeDeps: { include: ["wasm-media-encoders"] },
+  resolve: { conditions: ["onnxruntime-web-use-extern-wasm"] },
+  optimizeDeps: { include: ["wasm-media-encoders"], exclude: ["onnxruntime-web"] },
   server: {
     host: "127.0.0.1",
     watch: {
