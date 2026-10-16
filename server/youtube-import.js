@@ -20,7 +20,7 @@ export async function importYouTube(request,{createClient,fetcher=fetch}={}){
     const input=JSON.parse(text),id=parseYouTubeUrl(input.url);
     const proof=typeof input.proof==='string'&&/^[A-Za-z0-9_=-]{16,1024}$/.test(input.proof)?input.proof:null;
     const signal=AbortSignal.any([request.signal,AbortSignal.timeout(120000)]);
-    const client=await (createClient??(options=>Innertube.create(options)))({client_type:'VISIONOS',fail_fast:true,retrieve_player:false,enable_session_cache:false,fetch:(input,init)=>fetcher(input,{...init,signal})});
+    const client=await (createClient??(options=>Innertube.create(options)))({client_type:proof?'WEB':'VISIONOS',...(proof?{user_agent:request.headers.get('User-Agent')||undefined}:{}),fail_fast:true,retrieve_player:false,enable_session_cache:false,fetch:(input,init)=>fetcher(input,{...init,signal})});
     let info;
     for(const kind of proof?['WEB']:['VISIONOS','ANDROID_VR']){
       info=await client.getBasicInfo(id,{client:kind,...(proof?{po_token:proof}:{})});
