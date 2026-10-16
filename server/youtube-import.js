@@ -22,7 +22,7 @@ export async function importYouTube(request,{createClient,fetcher=fetch,relayUrl
     if(relayUrl&&relaySecret){
       const origin=new URL(relayUrl);
       if(origin.protocol!=='https:'||origin.username||origin.password)throw new Error('The download service is unavailable.');
-      const response=await fetcher(new URL('/audio',origin),{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+relaySecret},body:JSON.stringify({videoId:id}),signal,redirect:'error'});
+      const response=await fetcher(new URL('/audio',origin),{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+relaySecret},body:JSON.stringify({videoId:id}),signal,redirect:'manual'});
       if(!response.ok){
         if(response.status===429)return jsonError('The importer is busy. Try again shortly.',429);
         if(response.status===422)return jsonError('YouTube could not download this public video.',422);

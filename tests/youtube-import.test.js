@@ -60,6 +60,7 @@ test('the owned download origin receives only a validated ID and a server creden
   const fetcher=async(url,init)=>{
     called++;assert.equal(String(url),'https://origin.test/audio');
     assert.equal(init.headers.Authorization,'Bearer server-only');
+    assert.equal(init.redirect,'manual');
     assert.equal(init.headers.Cookie,undefined);assert.equal(init.headers.Origin,undefined);
     assert.deepEqual(JSON.parse(init.body),{videoId:id});
     return new Response(new Uint8Array([1,2,3]),{headers:{'Content-Type':'audio/webm','Content-Length':'3','X-Track-Duration':'196','X-Track-Title':encodeURIComponent('Song / 演奏')}});
@@ -74,4 +75,11 @@ test('origin authentication failures and invalid audio do not become false downl
     const response=await importYouTube(request(),{relayUrl:'https://origin.test',relaySecret:'server-only',fetcher:async()=>upstream});
     assert.equal(response.status,422);const text=await response.text();assert.ok(!text.includes('private credential'));assert.ok(!text.includes('server-only'));
   }
+});
+test('an origin redirect cannot forward its credential to another server',async()=>{
+  let called=0;
+  const response=await importYouTube(request(),{relayUrl:'https://origin.test',relaySecret:'server-only',fetcher:async(_,init)=>{
+    called++;assert.equal(init.redirect,'manual');return new Response(null,{status:302,headers:{Location:'https://another.test/'}});
+  }});
+  assert.equal(called,1);assert.equal(response.status,422);assert.ok(!(await response.text()).includes('server-only'));
 });
