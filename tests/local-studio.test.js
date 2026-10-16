@@ -35,6 +35,7 @@ test('local pairing creates an HttpOnly session that authenticates model request
       assert.equal((await fetch(base+'/health',{headers})).status,200);
     }
     assert.equal((await fetch(base+'/assets/app.js')).status,200);
+    assert.equal((await fetch(base+'/studio/assets/app.js')).status,200,'Relative Vite assets resolve beneath /studio/ too');
     const analyzeHeaders={...headers,Origin:base,'Content-Type':'application/octet-stream'};
     const result=await fetch(base+'/analyze',{method:'POST',headers:analyzeHeaders,body:new Uint8Array(5*22050*4)});
     assert.equal(result.status,200);assert.equal(calls,1);

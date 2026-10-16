@@ -31,7 +31,7 @@ export function createLocalStudio({ directory = resolve('dist') } = {}) {
   };
   async function handle(req,res) {
     const path = (req.url || '').split('?')[0];
-    if (!(path === '/' || path === '/connect' || path === '/studio' || path === '/studio/' || path.startsWith('/assets/') || path === '/icon.svg')) return false;
+    if (!(path === '/' || path === '/connect' || path === '/studio' || path === '/studio/' || path.startsWith('/assets/') || path.startsWith('/studio/assets/') || path === '/icon.svg')) return false;
     res.setHeader('Cache-Control','no-store');
     res.setHeader('X-Content-Type-Options','nosniff');
     res.setHeader('X-Frame-Options','DENY');
@@ -73,9 +73,10 @@ export function createLocalStudio({ directory = resolve('dist') } = {}) {
     const index=path==='/studio'||path==='/studio/';
     if(index&&!authenticated(req)){redirect(res,'/connect');return true;}
     let filename;
-    try {filename=resolve(root,index?'index.html':'.'+decodeURIComponent(path));}
+    const assetPath=path.replace(/^\/studio(?=\/assets\/)/,'');
+    try {filename=resolve(root,index?'index.html':'.'+decodeURIComponent(assetPath));}
     catch {res.writeHead(400);res.end();return true;}
-    const allowedRoot=path.startsWith('/assets/')?resolve(root,'assets'):root;
+    const allowedRoot=assetPath.startsWith('/assets/')?resolve(root,'assets'):root;
     if(!filename.startsWith(allowedRoot+sep)){res.writeHead(403);res.end();return true;}
     try {
       const bytes=await readFile(filename);
