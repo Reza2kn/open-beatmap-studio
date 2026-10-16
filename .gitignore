@@ -13,3 +13,6 @@ coverage/
 
 __pycache__/
 *.pyc
+
+.wrangler/
+.vite/

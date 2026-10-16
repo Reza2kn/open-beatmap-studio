@@ -1,3 +1,4 @@
+import {assessBombSafety,createBombSafetyContext} from './hazards.js';
 /**
  * Seeded, local choreography. Time in the public map schema is always beats;
  * audio features are seconds. No network, model weights, or global RNG needed.
@@ -709,52 +710,29 @@ function makeNotes(context, rhythm, profile, level, controls, walls, retainedTim
   return notes.sort(byBeat);
 }
 
-function nearestNoteDistance(notes, beat) {
-  let lo = 0,
-    hi = notes.length;
-  while (lo < hi) {
-    const mid = (lo + hi) >>> 1;
-    if (notes[mid].beat < beat) lo = mid + 1;
-    else hi = mid;
-  }
-  return Math.min(
-    Math.abs((notes[lo]?.beat ?? Infinity) - beat),
-    Math.abs((notes[lo - 1]?.beat ?? -Infinity) - beat),
-  );
-}
-
 function makeBombs(context, notes, walls, level, controls) {
-  if (
-    !controls.bombs ||
-    level < 1 ||
-    (context.hasAcousticEvidence && context.onsets.length < 2)
-  )
-    return [];
-  const bombs = [];
-  // A higher difficulty should spend its extra motion on music, rather than
-  // doubling hazard pauses. At 128 BPM this is one bomb roughly every 15 s.
-  const spacing = 32;
-  const clearance = (context.bpm / 60) * 0.65;
-  for (
-    let anchor = spacing - 1;
-    anchor < context.endBeat - 2;
-    anchor += spacing
-  ) {
-    // Search only in phrase tails, so hazards punctuate a pause and do not
-    // appear unexpectedly in the middle of a stream.
-    for (const delta of [0, -0.5, -1, -1.5]) {
-      const beat = anchor + delta;
-      if (
-        beat < context.startBeat ||
-        context.energyAt(context.timeAt(beat)) < 0.07
-      )
-        continue;
-      if (nearestNoteDistance(notes, beat) < clearance) continue;
-      const x = noise(controls.seed, anchor, 83) < 0.5 ? 0 : 3;
-      if (wallAt(walls, beat, x, clearance)) continue;
-      bombs.push({ beat: round(beat), x, y: 1 });
-      break;
+  if(!controls.bombs||notes.length<2)return [];
+  const bombs=[],spacing=level===0?64:32;
+  const beats=[...new Set(notes.map(note=>note.beat))];
+  const map=createBombSafetyContext({notes,obstacles:walls,bpm:context.bpm});
+  for(let anchor=spacing-1;anchor<context.endBeat-2;anchor+=spacing){
+    // Phrase punctuation follows a mapped attack; it never erases a beat to
+    // create artificial silence. Reserve the opposite saber lane instead.
+    const candidates=beats.filter(beat=>beat>=anchor-4&&beat<=anchor+1)
+      .sort((a,b)=>Math.abs(a-anchor)-Math.abs(b-anchor)||a-b);
+    const preferred=noise(controls.seed,anchor,83)<.5?0:3;
+    let best;
+    for(const beat of candidates){
+      const time=context.timeAt(beat);
+      if(time<1.25||time>context.duration-.75||context.energyAt(time)<.07||bombs.some(b=>Math.abs(b.beat-beat)*60/context.bpm<8))continue;
+      for(const y of level===0?[0]:[0,1,2])for(const x of [preferred,3-preferred]){
+        const bomb={beat:round(beat),x,y},safety=assessBombSafety(bomb,map);
+        if(!safety.safe)continue;
+        const score=Math.min(safety.minClearance,1.3)*.15-Math.abs(beat-anchor)*.15+(x===preferred?.05:0)+(2-y)*.35;
+        if(!best||score>best.score)best={bomb,score};
+      }
     }
+    if(best)bombs.push(best.bomb);
   }
   return bombs;
 }
@@ -884,6 +862,7 @@ export function generateMaps(
     const map = {
       notes,
       bombs: bombNotes,
+      hazardDiagnostics:{bombsRequested:controls.bombs,bombsPlaced:bombNotes.length,bombRule:"spatial-saber-envelope",status:!controls.bombs?"disabled":bombNotes.length?"placed":"no-clear-phrase-lane"},
       obstacles,
       events,
       njs,
@@ -1049,6 +1028,7 @@ export function validateGameplay(map) {
     last[n.color] = { note: n, index: i };
   }
   const bombCells = new Set();
+  const bombContext=createBombSafetyContext({notes,bpm});
   for (let i = 0; i < bombs.length; i++) {
     const b = bombs[i];
     if (!inGrid(b))
@@ -1073,13 +1053,14 @@ export function validateGameplay(map) {
         [i],
       );
     bombCells.add(key);
-    // No bombs in swing windows: test proximity in time, not only equal cells.
-    const distance = nearestNoteDistance(notes, b.beat);
-    if (seconds(distance) < 0.45)
+    // Same spatial envelope as generation: nearby opposite-lane notes are
+    // allowed, but preparation, follow-through and recovery paths are reserved.
+    const safety=assessBombSafety(b,bombContext);
+    if(!safety.safe)
       issue(
         warnings,
         "bomb-swing-window",
-        "A bomb is close in time to a cut; check the full saber path in VR.",
+        "A bomb intersects a nearby cut or recovery envelope; check the saber path in VR.",
         b,
         [i],
       );

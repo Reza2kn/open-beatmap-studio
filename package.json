@@ -1,6 +1,6 @@
 {
   "name": "open-beatmap-studio",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "private": true,
   "type": "module",
   "description": "Browser-first open source Beat Saber map generator",
@@ -20,10 +20,13 @@
     "fflate": "^0.8.2",
     "onnxruntime-web": "1.30.0",
     "three": "^0.180.0",
-    "wasm-media-encoders": "^0.7.0"
+    "wasm-media-encoders": "^0.7.0",
+    "youtubei.js": "18.1.0"
   },
   "devDependencies": {
-    "vite": "^7.1.0"
+    "vite": "^7.1.0",
+    "@cloudflare/vite-plugin": "1.37.1",
+    "wrangler": "4.92.0"
   },
   "license": "MIT"
 }

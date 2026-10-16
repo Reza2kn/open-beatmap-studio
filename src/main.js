@@ -8,7 +8,7 @@ import "@fontsource/dm-sans/600.css";
 import "@phosphor-icons/web/regular";
 import "./style.css";
 import { analyzeAudio, retimeAnalysis } from "./audio.js";
-import { applyBeatModel, checkLocalCompanion, isLocalNeuralStudio } from "./beat-model.js";
+import { applyBeatModel } from "./beat-model.js";
 import { analyzeBrowserNeural } from "./neural-audio.js";
 import { generateMaps, validateGameplay, getRhythmAnchors } from "./generator.js";
 import { buildMapFiles, validateMapFiles, createMapZip } from "./export.js";
@@ -32,8 +32,8 @@ document.querySelector("#app").innerHTML = `
 <div class="settings-actions"><button class="primary full" id="generate" disabled>${icon("sparkle")} Generate beatmaps</button><p class="local-note">All 5 difficulties · on your device</p></div>
 <section class="source-section" id="track-settings" role="tabpanel" aria-labelledby="track-settings-tab"><h2 class="sr-only">Your track</h2><div class="source-tabs" role="tablist" aria-label="Audio source"><button role="tab" aria-selected="true" id="file-tab">${icon("file-audio")} Audio file</button><button role="tab" aria-selected="false" id="youtube-tab">${icon("youtube-logo")} YouTube link</button></div>
 <div id="file-source"><label class="dropzone" id="dropzone" for="file"><span class="upload-icon">${icon("upload-simple")}</span><strong>Drop audio or <u>browse</u></strong><small>MP3, WAV, OGG, FLAC, M4A · up to 100 MB</small></label><input id="file" type="file" accept="audio/*,.ogg,.flac,.wav,.mp3,.m4a" class="sr-only"></div>
-<div id="youtube-source" hidden><label for="yt-url">YouTube URL</label><input id="yt-url" type="url" placeholder="https://youtube.com/watch?v=…"><label for="bridge-token">Local bridge key</label><input id="bridge-token" type="password" placeholder="Paste the key from your terminal" autocomplete="off"><button id="yt-import" class="secondary full">${icon("download-simple")} Import audio</button><p class="help">Run <code>npm run bridge</code> locally. YouTube needs the optional yt-dlp bridge. <button class="inline-link" id="bridge-guide">Setup guide</button></p></div>
-<div class="track-card" id="track-card"><span class="track-art">${icon("music-notes")}</span><div><strong id="track-name">Preparing demo…</strong><span id="track-detail">Original studio composition</span></div><span class="track-ready" title="Audio stays on your device">${icon("check-circle")}</span></div>
+<div id="youtube-source" hidden><label for="yt-url">YouTube video link</label><input id="yt-url" type="url" placeholder="Paste a YouTube URL" autocomplete="off" spellcheck="false"><button id="yt-import" class="secondary full">${icon("download-simple")} Import track</button><p class="help" id="youtube-status" role="status">Public videos · 5 seconds to 10 minutes. The studio fetches the audio, then analysis runs in your browser.</p></div>
+<div class="track-card" id="track-card"><span class="track-art">${icon("music-notes")}</span><div><strong id="track-name">Preparing demo…</strong><span id="track-detail">Original studio composition</span></div><span class="track-ready" title="Analysis and mapping run on your device">${icon("check-circle")}</span></div>
 <div class="track-extras"><details class="metadata"><summary>Details & trim ${icon("caret-down")}</summary><label for="title">Song title</label><input id="title" value="Afterglow Circuit" maxlength="120"><label for="artist">Artist</label><input id="artist" value="Open Beatmap Studio" maxlength="120"><label for="mapper">Mapper</label><input id="mapper" value="Open Beatmap" maxlength="120"><label for="cover">Cover art (optional)</label><input id="cover" type="file" accept="image/png,image/jpeg,image/webp">
 <div class="trim-row"><label for="trim-start">Trim start <span>seconds</span><input id="trim-start" type="number" min="0" step="0.1" value="0"></label><span class="trim-divider">→</span><label for="trim-end">Trim end <span>seconds</span><input id="trim-end" type="number" min="5" step="0.1" value="60"></label></div></details><button class="text-button" id="demo">Try demo ${icon("arrow-up-right")}</button></div>
 </section>
@@ -48,7 +48,7 @@ document.querySelector("#app").innerHTML = `
 <div class="timing-review"><label for="timing-audio">Timing check</label><select id="timing-audio"><option value="notes" selected>Note click</option><option value="off">Click off</option><option value="beats">Beat click</option></select><span id="timing-hint">Hit clicks follow the selected difficulty.</span></div><div class="timeline"><div class="timeline-top"><span>${icon("waveform")} AUDIO & STRUCTURE</span><span id="analysis-summary">Analyzing your track</span></div><div class="waveform-shell"><canvas id="waveform" aria-label="Audio waveform and song sections"></canvas><input id="scrub" class="timeline-scrub" type="range" min="0" max="60" step="0.01" value="0" aria-label="Seek through song"><div id="playhead"></div></div><div class="timeline-ruler" id="ruler"></div><div class="sections" id="sections"></div></div>
 <div class="map-stats"><div><span>${icon("music-note")} Notes</span><strong id="note-count">–</strong></div><div><span>${icon("activity")} Notes / sec</span><strong id="nps">–</strong></div><div><span>${icon("wall")} Walls</span><strong id="wall-count">–</strong></div><div><span>${icon("bomb")} Bombs</span><strong id="bomb-count">–</strong></div><div><span>${icon("lightning")} Light cues</span><strong id="light-count">–</strong></div><div class="validation-stat"><span id="validation-label">Checking patterns</span><strong id="validation">${icon("circle-notch")} In progress</strong></div></div>
 <div class="editor-footnote"><span>${icon("info")} Native Weave lightshow · PC & Quest custom-song loaders · no Chroma required.</span><button class="text-button" id="compat-open">Compatibility ${icon("arrow-up-right")}</button></div>
-</section></div><footer><span>v0.5 · Fast browser neural</span><button id="research-open">Under the hood ${icon("arrow-up-right")}</button><a href="https://github.com/Reza2kn/open-beatmap-studio" target="_blank" rel="noreferrer">Source on GitHub ${icon("arrow-up-right")}</a><span>Audio stays on your device<span class="desktop-only"> · Neural models run in this tab</span></span></footer></main>
+</section></div><footer><span>v0.6 · Open Beatmap Studio</span><button id="research-open">Under the hood ${icon("arrow-up-right")}</button><a href="https://github.com/Reza2kn/open-beatmap-studio" target="_blank" rel="noreferrer">Source on GitHub ${icon("arrow-up-right")}</a><span>Local analysis<span class="desktop-only"> · YouTube import built in</span></span></footer></main>
 <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 <dialog id="dialog"><button id="dialog-close" class="icon-button dialog-close" aria-label="Close dialog">${icon("x")}</button><div id="dialog-content"></div></dialog>`;
 const context = new AudioContext();
@@ -339,6 +339,7 @@ function selectDifficulty(d) {
   $("#nps").textContent = (map.notes.length / buffer.duration).toFixed(2);
   $("#wall-count").textContent = map.obstacles.length;
   $("#bomb-count").textContent = map.bombs.length;
+  $("#bomb-count").title=map.hazardDiagnostics?.status==='no-clear-phrase-lane'?'Bombs enabled; no clear phrase-tail lanes passed the saber-path checks.':map.hazardDiagnostics?.status==='disabled'?'Bomb generation is disabled.':'Sparse bombs in clear outer lanes.';
   $("#light-count").textContent = (
     lightshow?.stats?.colorGroups ||
     lightshow?.lightColorEventBoxGroups?.length ||
@@ -581,10 +582,12 @@ async function loadFile(file) {
       );
   } catch (e) {
     toast(`Could not open audio: ${e.message}`, true);
+    return false;
   } finally {
     setBusy(false);
   }
   if (original && !analysis) await generate({ reanalyze: true, startedAt });
+  return Boolean(analysis && !dirty);
 }
 $("#file").onchange = (e) => loadFile(e.target.files[0]);
 for (const event of ["dragenter", "dragover"])
@@ -607,52 +610,31 @@ function sourceTab(yt) {
 $("#file-tab").onclick = () => sourceTab(false);
 $("#youtube-tab").onclick = () => sourceTab(true);
 $("#yt-import").onclick = async () => {
-  if (busy) return;
-  const url = $("#yt-url").value,
-    key = $("#bridge-token").value;
-  if (!key && !isLocalNeuralStudio()) {
-    bridgeGuide();
-    return;
-  }
-  setBusy(
-    true,
-    "Importing from YouTube",
-    "Your local bridge is downloading and converting the audio…",
-  );
-  try {
-    const connection=await checkLocalCompanion(key);
-    const response = await fetch(connection.url+'/import', {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...connection.headers,
-      },
-      credentials:connection.credentials,
-      body: JSON.stringify({ url }),
-      signal: AbortSignal.timeout(210000),
-    });
-    if (!response.ok) {
-      const error = await response.json();
-      throw new Error(
-        error.error || "The local bridge could not import that video.",
-      );
-    }
-    const name = decodeURIComponent(
-      response.headers.get("X-Track-Title") || "YouTube track",
-    );
-    const blob = await response.blob();
+  if(busy)return;
+  const url=$("#yt-url").value.trim();
+  if(!url){$("#yt-url").focus();return;}
+  const controller=new AbortController();analysisController=controller;
+  $("#cancel-analysis").hidden=false;
+  $("#youtube-status").textContent="Connecting to YouTube…";
+  setBusy(true,"Importing your track","Fetching audio from YouTube. No setup required.");
+  try{
+    const response=await fetch('/api/youtube/import',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({url}),signal:controller.signal});
+    if(!response.ok){const error=await response.json().catch(()=>({}));throw new Error(error.error||'YouTube could not import this video.');}
+    const name=decodeURIComponent(response.headers.get('X-Track-Title')||'YouTube track'),extension=response.headers.get('X-Audio-Extension')||'webm';
+    const reader=response.body.getReader(),parts=[],total=Number(response.headers.get('Content-Length')||0);let bytes=0;
+    try{while(true){const {done,value}=await reader.read();if(done)break;bytes+=value.length;if(bytes>100*1024*1024)throw new Error('The audio is larger than 100 MB.');parts.push(value);const progress=`${(bytes/1048576).toFixed(1)}${total?` / ${(total/1048576).toFixed(1)}`:''} MB`;$("#youtube-status").textContent=`Downloading ${name} · ${progress}`;$("#loading-text").textContent=`Downloading audio · ${progress}`;}}
+    catch(error){await reader.cancel();throw error;}
+    if(!bytes)throw new Error('YouTube returned empty audio.');
+    $("#youtube-status").textContent=`Imported ${name}. Analyzing on this device…`;
     setBusy(false);
-    await loadFile(new File([blob], `${name}.flac`, { type: "audio/flac" }));
-  } catch (e) {
-    setBusy(false);
-    toast(
-      e instanceof TypeError
-        ? "Could not reach the local bridge. Run npm run bridge and allow local network access in your browser."
-        : e.message,
-      true,
-    );
-  }
+    const loaded=await loadFile(new File(parts,`${name}.${extension}`,{type:response.headers.get('Content-Type')||'audio/webm'}));
+    $("#youtube-status").textContent=loaded?"Imported · ready to preview":"Audio downloaded. Check the analysis message and retry.";
+  }catch(error){
+    setBusy(false);const message=error.name==='AbortError'?'Import cancelled.':error.message||'YouTube import failed. Try another public video.';
+    $("#youtube-status").textContent=message;toast(message,error.name!=='AbortError');
+  }finally{if(analysisController===controller)analysisController=null;$("#cancel-analysis").hidden=true;}
 };
+$("#yt-url").onkeydown=event=>{if(event.key==='Enter'){event.preventDefault();$("#yt-import").click();}};
 $("#cover").onchange = async (e) => {
   const file = e.target.files[0];
   if (!file) return;
@@ -738,15 +720,9 @@ $("#export").onclick = async () => {
 };
 const guide = () =>
   showDialog(
-    `<div class="dialog-eyebrow">FROM TRACK TO PLAYABLE</div><h2>A little music.<br>A lot of movement.</h2><ol class="guide-list"><li><strong>Bring a track</strong><p>Upload an audio file, or use the optional local YouTube bridge. Trim to the part you want.</p></li><li><strong>Shape the movement</strong><p>Choose choreography, density, walls, bombs and lighting. Every generation creates Easy through Expert+.</p></li><li><strong>Listen, preview, refine</strong><p>Check tempo and grid offset by ear. Use ½ / 2× tempo for ambiguous tracks. Try the map with your mouse before exporting.</p></li><li><strong>Take it to your headset</strong><p>Export a ZIP. Import it using a compatible PC or Quest custom-song loader. The stock games do not directly import ZIP maps.</p></li></ol><p class="help">Mouse practice approximates timing and directional cuts. It cannot validate VR reach, comfort or headset behavior. Give every map a real playtest.</p>`,
+    `<div class="dialog-eyebrow">FROM TRACK TO PLAYABLE</div><h2>A little music.<br>A lot of movement.</h2><ol class="guide-list"><li><strong>Bring a track</strong><p>Upload an audio file, or paste a public YouTube video link. Trim to the part you want.</p></li><li><strong>Shape the movement</strong><p>Choose choreography, density, walls, bombs and lighting. Every generation creates Easy through Expert+.</p></li><li><strong>Listen, preview, refine</strong><p>Check tempo and grid offset by ear. Use ½ / 2× tempo for ambiguous tracks. Try the map with your mouse before exporting.</p></li><li><strong>Take it to your headset</strong><p>Export a ZIP. Import it using a compatible PC or Quest custom-song loader. The stock games do not directly import ZIP maps.</p></li></ol><p class="help">Mouse practice approximates timing and directional cuts. It cannot validate VR reach, comfort or headset behavior. Give every map a real playtest.</p>`,
   );
 $("#guide-open").onclick = guide;
-function bridgeGuide() {
-  showDialog(
-    `<div class="dialog-eyebrow">OPTIONAL LOCAL COMPANION</div><h2>Bring a YouTube track.</h2><p>Browsers cannot reliably download YouTube media directly. This open source bridge runs on your computer with yt-dlp and FFmpeg.</p><pre>brew install ffmpeg\nnpm install\nnpm run bridge:setup\nnpm run bridge</pre><p>Open this project's local studio with <code>npm run dev</code>, then paste the temporary bridge key printed in your terminal into the YouTube tab. The bridge listens on <code>127.0.0.1:4174</code>. From a hosted studio your browser may ask for local network access.</p><p>One video, up to 10 minutes. Private videos, playlists and DRM are not supported. Only import audio you have permission to use. The audio is converted locally and sent straight to your browser.</p>`,
-  );
-}
-$("#bridge-guide").onclick = bridgeGuide;
 $("#compat-open").onclick = () =>
   showDialog(
     `<div class="dialog-eyebrow">STANDARD MAP EXPORT</div><h2>One ZIP. Five difficulties.</h2><p>The archive contains <code>Info.dat</code> (2.0.0), five Standard difficulty files (3.0.0), <code>song.ogg</code> with real Vorbis audio, and PNG cover art. Notes, bombs, walls and native color event boxes, rotating light groups and color boosts target the built-in Weave environment. No Chroma extension is required.</p><p><strong>PC:</strong> install custom songs using your version's compatible loader, or extract into its custom-level folder.</p><p><strong>Quest:</strong> use a compatible modded custom-song loader. Quest support depends on your game and loader version. A ZIP cannot be imported directly into the unmodified stock game.</p><p>We validate the map structure and gameplay safeguards. PC/Quest headset import and playtesting are still unverified. This browser stage approximates the exported environment.</p><p class="help">Beat Saber is a trademark of its owners. This is an independent community project.</p>`,
@@ -757,7 +733,7 @@ $("#about-open").onclick = () =>
   );
 $("#research-open").onclick = () =>
   showDialog(
-    `<div class="dialog-eyebrow">UNDER THE HOOD</div><h2>Musical structure.<br>Intentional movement.</h2><p><strong>Listen:</strong> The browser estimates a pulse from spectral rhythm. The browser separates transient and sustained sounds using median filters. Neural mode runs HTDemucs drum separation and Beat This! small0 beat tracking entirely in browser workers. The arranger prioritizes recurring kick/snare patterns and uses melodic attacks in passages without drums.</p><p><strong>Choreograph:</strong> The musical pulse provides the note rhythm. Recurring rhythmic families reuse movement vocabulary, alternate hands and cut directions, and simplify across five difficulties. Conservative walls and sparse bombs are checked against notes.</p><p><strong>Light:</strong> native event-box groups create spatial color waves, mirrored rotating beam fans, bass pulses and percussion accents, with phrase builds and deliberate rests. The browser provides an artistic approximation; actual game environments interpret these events differently.</p><p><strong>Export:</strong> a lightweight WebAssembly Vorbis encoder produces real Ogg audio in a worker. Musical pulse timing is preserved; grid offsets are baked once into exported event timestamps.</p><p class="help">The models download as static files; audio never leaves the browser. Neural inference prefers WebGPU for the learned layers and falls back to a fresh WebAssembly worker if GPU execution fails. Spectrograms and waveform reconstruction use CPU DSP. Ordinary HTTPS hosting needs no special browser headers. Browser pulse uses DSP and needs no model download.</p><div class="research-links"><a href="https://bsmg.wiki/mapping/map-format.html" target="_blank" rel="noreferrer">BSMG map format ↗</a><a href="https://bsmg.wiki/mapping/basic-mapping.html" target="_blank" rel="noreferrer">Mapping fundamentals ↗</a><a href="https://github.com/arseneyr/wasm-media-encoders" target="_blank" rel="noreferrer">Local Vorbis encoder ↗</a></div>`,
+    `<div class="dialog-eyebrow">UNDER THE HOOD</div><h2>Musical structure.<br>Intentional movement.</h2><p><strong>Listen:</strong> The browser estimates a pulse from spectral rhythm. The browser separates transient and sustained sounds using median filters. Neural mode runs HTDemucs drum separation and Beat This! small0 beat tracking entirely in browser workers. The arranger prioritizes recurring kick/snare patterns and uses melodic attacks in passages without drums.</p><p><strong>Choreograph:</strong> The musical pulse provides the note rhythm. Recurring rhythmic families reuse movement vocabulary, alternate hands and cut directions, and simplify across five difficulties. Conservative walls and sparse bombs are checked against notes.</p><p><strong>Light:</strong> native event-box groups create spatial color waves, mirrored rotating beam fans, bass pulses and percussion accents, with phrase builds and deliberate rests. The browser provides an artistic approximation; actual game environments interpret these events differently.</p><p><strong>Export:</strong> a lightweight WebAssembly Vorbis encoder produces real Ogg audio in a worker. Musical pulse timing is preserved; grid offsets are baked once into exported event timestamps.</p><p class="help">The models download as static files. Uploaded audio stays in the browser; YouTube import uses the hosted downloader. Neural inference prefers WebGPU for the learned layers and falls back to a fresh WebAssembly worker if GPU execution fails. Spectrograms and waveform reconstruction use CPU DSP. Ordinary HTTPS hosting needs no special browser headers. Browser pulse uses DSP and needs no model download.</p><div class="research-links"><a href="https://bsmg.wiki/mapping/map-format.html" target="_blank" rel="noreferrer">BSMG map format ↗</a><a href="https://bsmg.wiki/mapping/basic-mapping.html" target="_blank" rel="noreferrer">Mapping fundamentals ↗</a><a href="https://github.com/arseneyr/wasm-media-encoders" target="_blank" rel="noreferrer">Local Vorbis encoder ↗</a></div>`,
   );
 async function loadDemo() {
   if (busy) return;

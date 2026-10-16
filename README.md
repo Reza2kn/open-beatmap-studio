@@ -26,7 +26,7 @@ npm run preview
 Track editing and map/light direction use separate control tabs. Generate remains at the top of either tab; details, trimming, lighting and audio-analysis options expand when needed. The preview adapts to screen height while preserving the larger text.
 
 - Browser audio decoding/trimming, harmonic-percussive median separation, refined transient attacks, approximate constant BPM/phase, RMS energy and sixteen-beat phrase windows.
-- Editable BPM/grid offset, half/double tempo controls, deterministic seeds, density, four choreography styles, optional walls/bombs/lighting.
+- Editable BPM/grid offset, half/double tempo controls, deterministic seeds, density, four choreography styles, optional walls/bombs/lighting. Sparse bombs follow real mapped attacks in clear outer lanes, checking cut preparation, follow-through and same-hand recovery; Easy uses fewer lower-row hazards.
 - Easy, Normal, Hard, Expert and Expert+ Standard maps that prioritize repeated kick/snare grooves, use rhythmic melodic attacks in drumless passages, repeat movement phrases and simplify the same groove across difficulty profiles, with hand alternation, parity and hazard-clearance safeguards. Difficulty names are generated profiles, not ranked-map certification.
 - **Advanced native Weave lighting:** individual fixture color waves, complementary color halves, brightness gradients, index filters, eased X/Y beam rotations, distributed fans, bass/percussion accents, phrase builds and energy-jump blooms, dim rests and final blackout. No Chroma dependency. Brightness and motion controls; a dedicated lightshow view.
 - Three.js browser stage with a visible cut frame and automatic cuts on mapped attacks, note-click timing review enabled by default, optional beat-grid clicks, waveform hit annotations, speaker-clock synchronization, seeking, playback speed/volume, mouse practice with directional cuts, score, combo, bombs and wall penalties. Hold the primary mouse button and swipe through either color near the cut frame, following the arrow. Swept collision tests follow the visible moving cube. Space toggles playback outside form fields.
@@ -46,20 +46,13 @@ See [browser neural architecture and provenance](docs/browser-neural.md) and [Be
 
 The arranger uses the pulse as a timing reference, then selects audible instrument attacks. Separated kick/snare patterns form the main groove; aligned melodic attacks lead in drumless passages. The difficulty scale starts with the former Hard groove as its Easy baseline. Normal through Expert+ progressively admit supported detail and increase movement complexity and speed. Extra notes require acoustic evidence; a song with few distinct sounds can reach a timing-density ceiling before Expert+. Simultaneous two-saber notes still produce one click. Browser HPSS is an approximate transient separator and can confuse vocals or piano with drums; the optional full neural mode uses an actual learned drum stem. Fast neural pulse retains DSP attack detection. Each percussion band refines timing on its own filtered signal so nearby louder sounds do not steal the attack time. The seed changes movement rather than rhythm. The same rhythmic events also direct lightshow accents. The GPU-compatible core keeps inverse STFT in CPU JavaScript; the ONNX port preserves model pulse timestamps and detects physical attacks on separated stems.
 
-## YouTube: optional local bridge
+## YouTube: paste and import
 
-Direct YouTube media downloads do not reliably work inside browser CORS and media-access restrictions. A small opt-in loopback companion uses local `yt-dlp` and FFmpeg. `bridge:setup` creates a project-local Python virtual environment and does not modify your global Python packages. You can instead install yt-dlp yourself, or set `BEATMAP_YTDLP` to an executable path. It is independent of browser neural mapping and receives no audio from that mode.
+Select **YouTube link**, paste a video URL and click **Import track**. No terminal, local bridge, companion key, API key or YouTube account is required. The same-origin hosted endpoint uses `youtubei.js` 18.1.0 to fetch a public video's audio and streams it into the browser. Beat analysis, choreography, lighting, preview and final Vorbis/ZIP encoding then run on the user's device.
 
-```sh
-# macOS; install equivalent packages on other platforms
-brew install ffmpeg
-npm run bridge:setup
-npm run bridge
-```
+Imports accept individual YouTube/youtu.be/watch/shorts/embed links, 5 seconds to 10 minutes, up to 100 MB. Live, account-restricted and unavailable media are rejected. Server memory stays bounded while streaming; input is limited to validated YouTube video IDs. Audio responses are private/no-store, signed media URLs stay server-side, and disconnects cancel the stream. Only the video URL is sent to the hosted importer; uploaded audio does not use it. No downloaded recording is bundled in this repository.
 
-Keep the bridge terminal open, select **YouTube link** in the studio, and paste its temporary key. Import one public video up to ten minutes. The bridge converts the download to lossless FLAC using FFmpeg; the browser encodes final Vorbis audio for the map ZIP. This avoids depending on a system FFmpeg build with libvorbis. The bridge binds only `127.0.0.1:4174`, requires its random per-run token, checks origins and restricts URLs to YouTube video IDs. Subprocess arguments are passed without a shell, downloads time out, and temporary files are removed. It does not request cookies, account credentials, playlists, private/live videos or DRM bypass. Import only audio you are authorized to use.
-
-Use the localhost studio for the most reliable connection. A hosted studio may need browser local-network permission; some browser policies may block it. YouTube access also depends on yt-dlp/YouTube availability and may require future downloader updates. Audio-file upload is independent of this bridge.
+The hosted app is now a Vite client plus a Cloudflare Worker API, retaining the Sites build integration and existing access policy. `npm run dev` also runs that API for contributors; end users just open the deployed studio. YouTube may change its clients or restrict a hosting IP, so imports can fail with a visible message. See [import architecture and validation](docs/youtube-import.md). The old loopback bridge remains a legacy development tool and is no longer part of the app's import flow.
 
 ## Import into Beat Saber
 
@@ -105,7 +98,9 @@ src/preview.js         Three.js stage + approximate mouse practice
 src/media.js           trim, original synth demo, audio-clock transport
 src/encode.worker.js   PCM → Ogg Vorbis in a worker
 src/export.js          validated Standard v3 map files → ZIP
-server/bridge.mjs      optional authenticated local YouTube importer
+server/youtube-import.js  hosted YouTube URL → bounded audio stream
+worker/index.js       same-origin API + static asset routing
+server/bridge.mjs      legacy optional local development helper
 server/beat-model.py   Beat This! beats + Demucs drum attacks (optional)
 ```
 

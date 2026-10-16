@@ -3088,3 +3088,52 @@ footer { margin-top: 16px; padding: 14px 0; gap: 12px 24px; }
   }
   .map-stats .validation-stat strong { margin: 0; }
 }
+
+/* Finished studio surfaces; geometry and readable type remain compact. */
+body { background: radial-gradient(ellipse at 25% -20%, #49332936, transparent 50%), #101419; }
+.topbar { background: #14191ee8; box-shadow: 0 1px 0 #ffffff05; border-color: #ffffff0c; }
+.brand-mark { color: #ffa58a; filter: drop-shadow(0 0 10px #f58b7028); }
+.settings { border-color: #394149; border-radius: 12px; background: linear-gradient(145deg,#1d242c,#161c23); box-shadow: 0 12px 40px #060a102e, inset 0 1px #ffffff07; }
+.settings-tabs { background: #10171d; border-color: #ffffff0b; }
+.settings-tabs button { transition: background .18s, color .18s; }
+.settings-tabs button:hover { color: #f8d4c5; background: #ffffff06; }
+.settings-tabs button[aria-selected="true"] { background: linear-gradient(180deg,#4c342b,#302620); color: #ffd4c2; }
+.settings-actions { background: #131b2299; border-color: #ffffff08; }
+.primary { background: linear-gradient(180deg,#ffad8d,#f28c72); border: 1px solid #ffb39680; box-shadow: inset 0 1px #ffe6d775, 0 3px 9px #0002; transition: transform .15s, background .15s, box-shadow .15s; }
+.primary:hover { background: linear-gradient(180deg,#ffbda0,#ffa087); box-shadow: inset 0 1px #fff8, 0 5px 18px #f58b701f; transform: translateY(-1px); }
+.primary:active { transform: translateY(1px); box-shadow: inset 0 1px 4px #9c503e55; }
+.primary:disabled { transform: none; }
+.secondary { background: #263540; border-color: #53626c; box-shadow: inset 0 1px #ffffff09; }
+.secondary:hover { background: #324552; border-color: #9fb5c1; }
+input:not([type="range"]):not([type="checkbox"]):not([type="file"]),select,.generation-section select { background: #101820; border-color: #3a4651; box-shadow: inset 0 2px 4px #0003; }
+input:not([type="range"]):focus, select:focus { border-color: #d89478; }
+.dropzone { border-style: solid; border-color: #43515c; background: radial-gradient(ellipse at 30% 0,#33495744,transparent 80%),#17222b; box-shadow: inset 0 1px #ffffff06; }
+.dropzone:hover,.dropzone.dragover { background-color: #26323b; border-color: #f5a489; box-shadow: inset 0 0 0 1px #f58b7030; }
+.upload-icon { background: #3b302c; border-color: #806454; color: #f0b59a; border-radius: 7px; }
+.track-card { background: #10182080; border-color: #ffffff0a; box-shadow: inset 0 1px #ffffff04; }
+.track-art { background: linear-gradient(150deg,#6b4135,#302c2d); color: #ffc7a7; border: 1px solid #a66a5040; }
+.track-ready { color: #b0d6bc; }
+.difficulty-tabs button { border-color: #ffffff08; background: #171f28; }
+.difficulty-tabs button:hover { background: #29313a; }
+.difficulty-tabs [aria-selected="true"] { background: linear-gradient(150deg,#51372c,#2c2521); border-color: #b77e5f; color: #ffd6c4; box-shadow: inset 0 1px #d4916d30; }
+.lightshow-view,.practice-button { background: #1b2732; border-color: #465763; box-shadow: inset 0 1px #ffffff08; }
+.lightshow-view[aria-pressed="true"],.practice-button[aria-pressed="true"] { background: #42302a; border-color: #d18d6f; color: #ffd0b9; }
+#runtime-status { color: #a6bbc6; }
+.stage-shell { border-color: #405363; border-radius: 12px 12px 0 0; box-shadow: inset 0 0 0 1px #b7d9ef08, 0 10px 35px #04091040; }
+.stage-shell:after { background: linear-gradient(180deg,#050a1230,transparent 24%,transparent 76%,#050a1255); }
+.stage-mode,.light-pattern { text-shadow: 0 2px 8px #000; }
+.stage-fullscreen { background: #101b27a8; border-color: #7b98ab55; backdrop-filter: blur(8px); }
+.transport { background: linear-gradient(180deg,#1b2631,#141d26); border: 1px solid #405363; border-top: 0; border-radius: 0 0 12px 12px; padding-left: 10px; padding-right: 10px; }
+.play-button { background: #f4e8de; box-shadow: 0 2px 8px #03070d55, inset 0 1px #fff; }
+.play-button:hover { background: #ffc3a6; }
+.timing-review { padding: 8px 10px; border-radius: 7px; background: #19212a88; }
+.waveform-shell { background-color: #17212b; border: 1px solid #ffffff06; }
+.sections button { border-radius: 5px; border-left-color: #da9679; }
+.map-stats { background: linear-gradient(150deg,#1d2732,#151e27); border-color: #384853; box-shadow: inset 0 1px #ffffff06; }
+.map-stats strong { font-variant-numeric: tabular-nums; }
+.map-stats .validation-stat { background: #13241c40; border-color: #34433a; }
+.loading { background: radial-gradient(ellipse,#192633f2,#0c141ef7); backdrop-filter: blur(10px); }
+.loading-spinner { border-width: 3px; box-shadow: 0 0 24px #f58b701c; }
+summary:hover { color: #ffd3bd; }
+button:focus-visible,a:focus-visible,input:focus-visible,select:focus-visible,summary:focus-visible { outline-color: #ffbd9d; outline-offset: 3px; }
+@media (prefers-reduced-motion: reduce) { button,a { transition: none; } .primary:hover,.primary:active { transform: none; } }

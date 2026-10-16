@@ -22,7 +22,7 @@ The full-song separation can take several minutes on CPU and uses substantial me
 
 Pulse predictions and separated stems are estimates. The ONNX port's waveform estimates can differ from the Python path, which used mono input and different overlap/shifts; identical note counts are not expected. Physical attack timestamps are preserved, but subjective musicality and headset gameplay still need human review. Browser practice is a mouse approximation, not a VR comfort evaluation.
 
-YouTube downloading remains a separate optional local importer because ordinary browser pages cannot reliably access YouTube media directly. It is not needed for uploaded-file neural analysis.
+YouTube import now uses the same-origin hosted downloader, with no user setup. It fetches a public video and streams audio to this tab. Uploaded-file analysis still needs no server audio processing; inference and mapping remain browser-local. See [YouTube import](youtube-import.md).
 
 ## Independent graph check
 

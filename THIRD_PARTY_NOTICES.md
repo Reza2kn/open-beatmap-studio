@@ -17,3 +17,7 @@ Dependencies are installed from npm and pinned in package-lock.json. Their origi
 - PyTorch and torchaudio (optional local inference runtime): BSD-style upstream licenses, https://github.com/pytorch/pytorch and https://github.com/pytorch/audio. These packages are installed separately in the ignored local model environment.
 
 No Beat Saber artwork, environment meshes, songs or proprietary assets are bundled. The browser stage and synth demo are generated from this project's source.
+
+- YouTube.js 18.1.0: MIT, https://github.com/LuanRT/YouTube.js. Used only by the hosted importer through its Cloudflare Worker entry; upstream license is included in public/licenses/youtubei.js-LICENSE.
+- Cloudflare Vite plugin and Wrangler: MIT/Apache-2.0 as distributed in their pinned packages, https://github.com/cloudflare/workers-sdk. Build/dev tooling; no Cloudflare account credential is embedded in the app.
+- Vendored Sites Vite plugin 0.2.0: MIT. Source and upstream license are retained under build/.

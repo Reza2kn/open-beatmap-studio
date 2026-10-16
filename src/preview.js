@@ -1,4 +1,5 @@
 import * as THREE from "three";
+import {noteGeometry,cutFrame,buildEnvironment,bombMesh,wallMesh} from "./stage-art.js";
 import { PRACTICE_LIMITS, assessPracticeCut, projectPracticeBox } from "./practice.js";
 import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
@@ -68,8 +69,8 @@ export class Stage {
     this.disposed = false;
     this.time = 0;
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color("#080d13");
-    this.scene.fog = new THREE.FogExp2("#080d13", 0.027);
+    this.scene.background = new THREE.Color("#080e17");
+    this.scene.fog = new THREE.FogExp2("#080e17", 0.023);
     this.camera = new THREE.PerspectiveCamera(58, 1, 0.1, 150);
     this.camera.position.set(0, 2.7, 6.6);
     this.camera.lookAt(0, 1.55, -13);
@@ -79,61 +80,20 @@ export class Stage {
       powerPreference: "high-performance",
     });
     this.renderer.setPixelRatio(Math.min(devicePixelRatio, 1.7));
+    this.renderer.toneMapping=THREE.ACESFilmicToneMapping;
+    this.renderer.toneMappingExposure=1.05;
     container.append(this.renderer.domElement);
     this.renderer.domElement.setAttribute(
       "aria-label",
       "3D beatmap preview. Use Play or Mouse practice below.",
     );
     this.renderer.domElement.tabIndex = 0;
-    this.scene.add(new THREE.AmbientLight("#dbe6fa", 2));
-    const key = new THREE.DirectionalLight("#ffffff", 3);
+    this.scene.add(new THREE.AmbientLight("#b8cce3", .85));
+    const key = new THREE.DirectionalLight("#ffe8da", 2.3);
     key.position.set(3, 6, 8);
     this.scene.add(key);
-    const floor = new THREE.Mesh(
-      new THREE.PlaneGeometry(11, 110),
-      new THREE.MeshStandardMaterial({
-        color: 0x0c1520,
-        roughness: 0.5,
-        metalness: 0.6,
-      }),
-    );
-    floor.rotation.x = -Math.PI / 2;
-    floor.position.set(0, -0.1, -43);
-    this.scene.add(floor);
-    const grid = new THREE.GridHelper(100, 80, 0x1d3549, 0x132333);
-    grid.position.set(0, -0.08, -40);
-    this.scene.add(grid);
-    this.rails = [];
-    for (const x of [-2.4, 2.4]) {
-      const rail = new THREE.Mesh(
-        new THREE.BoxGeometry(0.025, 0.025, 100),
-        new THREE.MeshBasicMaterial({ color: x < 0 ? RED : BLUE }),
-      );
-      rail.position.set(x, 0, -45);
-      this.scene.add(rail);
-    }
-    const lineMat = new THREE.LineBasicMaterial({
-      color: 0x203b4d,
-      transparent: true,
-      opacity: 0.65,
-    });
-    for (let i = 0; i < 12; i++) {
-      const z = -8 - i * 7;
-      const points = [
-        [-7, 0, z],
-        [-7, 6, z],
-        [-4, 8, z],
-        [4, 8, z],
-        [7, 6, z],
-        [7, 0, z],
-      ].map((p) => new THREE.Vector3(...p));
-      this.scene.add(
-        new THREE.Line(
-          new THREE.BufferGeometry().setFromPoints(points),
-          lineMat,
-        ),
-      );
-    }
+    buildEnvironment(this.scene);
+    this.rails=[];
     this.beams = [];
     for (let i = 0; i < 12; i++) {
       const side = i % 2 ? -1 : 1,
@@ -151,32 +111,24 @@ export class Stage {
       this.scene.add(beam);
       this.beams.push(beam);
     }
-    this.cutFrameMaterial = new THREE.LineBasicMaterial({
+    this.cutFrameMaterial = new THREE.MeshBasicMaterial({
       color: 0xb5c5ce,
       transparent: true,
       opacity: 0.18,
     });
-    this.cutFrame = new THREE.LineLoop(
-      new THREE.BufferGeometry().setFromPoints([
-        new THREE.Vector3(-2, 0.15, 1),
-        new THREE.Vector3(2, 0.15, 1),
-        new THREE.Vector3(2, 3.2, 1),
-        new THREE.Vector3(-2, 3.2, 1),
-      ]),
-      this.cutFrameMaterial,
-    );
+    this.cutFrame = cutFrame(this.cutFrameMaterial);
     this.scene.add(this.cutFrame);
-    this.noteGeometry = new THREE.BoxGeometry(0.72, 0.72, 0.72);
+    this.noteGeometry = noteGeometry();
     this.arrowGeometry = new THREE.PlaneGeometry(0.55, 0.55);
     this.texture = arrowTexture();
     this.noteMaterials = [RED, BLUE].map(
       (color) =>
         new THREE.MeshStandardMaterial({
           color,
-          roughness: 0.26,
-          metalness: 0.15,
+          roughness: 0.3,
+          metalness: 0.28,
           emissive: color,
-          emissiveIntensity: 0.28,
+          emissiveIntensity: 0.16,
         }),
     );
     this.arrowMaterial = new THREE.MeshBasicMaterial({
@@ -266,7 +218,7 @@ export class Stage {
       }
     const count = this.fixtures.length;
     this.lightRig = new THREE.InstancedMesh(
-      new THREE.CylinderGeometry(0.026, 0.006, 1, 5, 1, true),
+      new THREE.CylinderGeometry(0.045, 0.008, 1, 6, 1, true),
       new THREE.MeshBasicMaterial({
         color: 0xffffff,
         transparent: true,
@@ -277,11 +229,11 @@ export class Stage {
       count,
     );
     this.lightGlow = new THREE.InstancedMesh(
-      new THREE.CylinderGeometry(0.1, 0.02, 1, 5, 1, true),
+      new THREE.CylinderGeometry(0.24, 0.025, 1, 8, 1, true),
       new THREE.MeshBasicMaterial({
         color: 0xffffff,
         transparent: true,
-        opacity: 0.06,
+        opacity: 0.035,
         blending: THREE.AdditiveBlending,
         depthWrite: false,
       }),
@@ -480,16 +432,9 @@ export class Stage {
         mesh,
       });
     }
-    const bombGeo = new THREE.IcosahedronGeometry(0.36, 1);
+
     for (const [index, n] of map.bombs.entries()) {
-      const mat = new THREE.MeshStandardMaterial({
-        color: 0x20272f,
-        emissive: 0xff6352,
-        emissiveIntensity: 0.2,
-        wireframe: true,
-      });
-      const mesh = new THREE.Mesh(bombGeo, mat);
-      mesh.userData.disposable = true;
+      const mesh=bombMesh();
       mesh.position.set(n.x - 1.5, n.y + 0.65, 0);
       this.scene.add(mesh);
       this.objects.push({
@@ -502,16 +447,7 @@ export class Stage {
     }
     for (const [index, w] of map.obstacles.entries()) {
       const depth = ((w.duration * 60) / bpm) * 10;
-      const mesh = new THREE.Mesh(
-        new THREE.BoxGeometry(w.width, w.height, depth),
-        new THREE.MeshBasicMaterial({
-          color: 0xe86c54,
-          wireframe: true,
-          transparent: true,
-          opacity: 0.4,
-        }),
-      );
-      mesh.userData.disposable = true;
+      const mesh=wallMesh(w.width,w.height,depth);
       mesh.position.set(w.x - 2 + w.width / 2, w.y + w.height / 2 - 0.1, 0);
       this.scene.add(mesh);
       this.objects.push({
@@ -641,24 +577,26 @@ export class Stage {
   burst(position, color) {
     for (let i = 0; i < 8; i++) {
       const mesh = new THREE.Mesh(
-        new THREE.BoxGeometry(0.08, 0.08, 0.08),
+        new THREE.IcosahedronGeometry(0.035, 0),
         new THREE.MeshBasicMaterial({ color, transparent: true }),
       );
       mesh.position.copy(position);
       this.scene.add(mesh);
       this.particles.push({
         mesh,
-        life: 1,
+        life: .4,
         v: new THREE.Vector3(
-          (Math.random() - 0.5) * 0.13,
-          Math.random() * 0.1,
-          (Math.random() - 0.5) * 0.1,
+          (Math.random() - 0.5) * 5,
+          Math.random() * 3,
+          (Math.random() - 0.5) * 4,
         ),
       });
     }
   }
   render() {
     const now = this.getTime?.() || 0;
+    const frameNow=performance.now(),effectDt=Math.min(.05,Math.max(0,(frameNow-(this.effectTime??frameNow))/1000));
+    this.effectTime=frameNow;
     if (
       this.lastRenderedTime === now &&
       !this.renderDirty &&
@@ -751,10 +689,10 @@ export class Stage {
     }
     for (let i = this.particles.length - 1; i >= 0; i--) {
       const p = this.particles[i];
-      p.life -= 0.035;
-      p.mesh.position.add(p.v);
-      p.mesh.rotation.x += 0.1;
-      p.mesh.material.opacity = p.life;
+      p.life -= effectDt;
+      p.mesh.position.addScaledVector(p.v,effectDt);
+      p.mesh.rotation.x += effectDt*5;
+      p.mesh.material.opacity = Math.max(0,p.life/.4);
       if (p.life <= 0) {
         this.scene.remove(p.mesh);
         p.mesh.geometry.dispose();

@@ -1,3 +1,4 @@
+import {assessBombSafety} from '../src/hazards.js';
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
@@ -259,6 +260,8 @@ test("real demo DSP analysis preserves difficulty progression without excessive 
     offsetOverride: 0,
   });
   const maps = generateMaps(analysis);
+  const withoutBombs=generateMaps(analysis,{bombs:false});
+  for(const d of DIFFICULTIES)assert.deepEqual(maps[d].notes,withoutBombs[d].notes,'Bombs must not remove or retime musical notes.');
   const counts = DIFFICULTIES.map(
     (difficulty) => maps[difficulty].notes.length,
   );
@@ -267,6 +270,7 @@ test("real demo DSP analysis preserves difficulty progression without excessive 
   for (const map of Object.values(maps)) {
     assert.deepEqual(map.validation.errors, []);
     assert.deepEqual(map.validation.warnings, []);
+    assert.ok(map.bombs.length>0,`${map.difficulty}: the continuous demo has clear bomb lanes`);
     assert.ok(
       map.bombs.length <= 4,
       "bomb pauses should be sparse in a one-minute song",
@@ -347,7 +351,7 @@ test("numeric energy frames and timestamped energy both preserve silent spans", 
   }
 });
 
-test("hazards are sparse, visible, optional and separated from all cuts", () => {
+test("hazards are sparse, visible, optional and clear of saber paths", () => {
   const analysis = musicalAnalysis({ duration: 160 });
   // Genuine phrase-tail pauses make room for hazards. The generator must not
   // remove observed musical attacks merely to force a bomb into a dense song.
@@ -359,12 +363,12 @@ test("hazards are sparse, visible, optional and separated from all cuts", () => 
   analysis.melodicEvents = [];
   analysis.modelBeatTimes = Array.from({length:Math.floor(analysis.duration*2)},(_,index)=>analysis.offset+index*.5);
   const maps = generateMaps(analysis);
-  assert.equal(maps.Easy.bombs.length, 0);
+  assert.ok(maps.Easy.bombs.length > 0);
   for (const map of Object.values(maps)) {
-    if (map.difficulty !== "Easy") assert.ok(map.bombs.length > 0);
+    // Some movement phrases occupy both outer lanes; never force a hazard.
     for (const b of map.bombs) {
-      for (const n of map.notes)
-        assert.ok((Math.abs(n.beat - b.beat) * 60) / map.bpm >= 0.65 - 0.001);
+      assert.equal(assessBombSafety(b,map).safe,true);
+      if(map.difficulty==='Easy')assert.equal(b.y,0);
       assert.ok(
         map.events.some(
           (e) =>
